@@ -1,46 +1,46 @@
-# OpenHands LLM Pipeline para TFM-Justin
+# OpenHands LLM Pipeline for TFM-Justin
 
-Pipeline automatizado de análisis y generación de seeds para CVEs usando LLM (LLaMA 3 local u otros modelos).
+Automated pipeline for CVE vulnerability analysis and seed generation using LLMs (local LLaMA 3 or other models).
 
-## 🎯 Objetivo
+## 🎯 Objective
 
-Implementar un ciclo iterativo **ANALYZE → GENERATE → VERIFY** que usa un LLM para:
+Implement an iterative **ANALYZE → GENERATE → VERIFY** loop that leverages an LLM to:
 
-1. **ANALYZE**: Analizar el CVE y contexto del task
-2. **GENERATE**: Proponer mutaciones de seed basadas en el análisis
-3. **VERIFY**: Ejecutar el benchmark y verificar si se gatilló la vulnerabilidad
+1. **ANALYZE**: Analyze the CVE vulnerability and task context
+2. **GENERATE**: Propose seed mutations based on the analysis
+3. **VERIFY**: Execute the benchmark and verify if the vulnerability was triggered
 
-El LLM actúa como "fuzzing assistant" que propone mutaciones inteligentes en lugar de fuerza bruta.
+The LLM acts as an intelligent "fuzzing assistant" that proposes strategic mutations instead of brute-force approaches.
 
-## 📋 Requisitos
+## 📋 Requirements
 
-### Python 3.12+ (IMPORTANTE)
+### Python 3.12+ (IMPORTANT)
 
-OpenHands SDK requiere Python 3.12 o superior. **NO usar el mismo entorno que el repo base**.
+OpenHands SDK requires Python 3.12 or higher. **DO NOT use the same environment as the base repository**.
 
 ```powershell
-# Crear entorno separado para OpenHands
+# Create separate environment for OpenHands
 python -m venv .venv-oh
 .venv-oh\Scripts\activate
 
-# Instalar dependencias
+# Install dependencies
 pip install -r requirements-openhands.txt
 ```
 
-### Ollama + LLaMA 3 (Recomendado para local)
+### Ollama + LLaMA 3 (Recommended for local deployment)
 
-1. Descargar e instalar Ollama: https://ollama.ai/download
-2. Abrir terminal y ejecutar:
+1. Download and install Ollama: https://ollama.ai/download
+2. Open terminal and run:
 
 ```powershell
-# Descargar modelo LLaMA 3
+# Pull LLaMA 3 model
 ollama pull llama3
 
-# Iniciar servidor (puerto 11434 por defecto)
+# Start server (default port 11434)
 ollama serve
 ```
 
-3. Verificar que funciona:
+3. Verify installation:
 
 ```powershell
 ollama run llama3 "Hello"
@@ -48,25 +48,25 @@ ollama run llama3 "Hello"
 
 ### Docker Desktop
 
-Necesario para ejecutar los contenedores de los tasks:
+Required to run task containers:
 
 ```powershell
-# Verificar instalación
+# Verify installation
 docker --version
 docker compose version
 ```
 
-## ⚙️ Configuración
+## ⚙️ Configuration
 
-### 1. Copiar archivo de configuración
+### 1. Copy configuration file
 
 ```powershell
 cp agents\openhands_llama3\config\example.env agents\openhands_llama3\.env
 ```
 
-### 2. Editar `.env` según tu LLM
+### 2. Edit `.env` according to your LLM provider
 
-#### Para LLaMA 3 local (Ollama):
+#### For local LLaMA 3 (Ollama):
 
 ```bash
 LLM_MODEL=ollama/llama3
@@ -75,7 +75,7 @@ LLM_TIMEOUT=120
 LLM_NUM_RETRIES=3
 ```
 
-#### Para OpenAI GPT-4:
+#### For OpenAI GPT-4:
 
 ```bash
 LLM_MODEL=gpt-4o
@@ -85,7 +85,7 @@ LLM_TIMEOUT=60
 LLM_NUM_RETRIES=3
 ```
 
-#### Para Google Gemini:
+#### For Google Gemini:
 
 ```bash
 LLM_MODEL=gemini/gemini-1.5-pro
@@ -95,16 +95,16 @@ LLM_TIMEOUT=60
 LLM_NUM_RETRIES=3
 ```
 
-### 3. Construir la imagen Docker del task
+### 3. Build Docker image for the task
 
 ```powershell
-# Ejemplo: CVE-2023-4863_libwebp
+# Example: CVE-2023-4863_libwebp
 python -m scripts.bench build CVE-2023-4863_libwebp
 ```
 
-## 🚀 Uso
+## 🚀 Usage
 
-### Comando básico
+### Basic command
 
 ```powershell
 python -m agents.openhands_llama3.run ^
@@ -114,29 +114,29 @@ python -m agents.openhands_llama3.run ^
     --service target-vuln
 ```
 
-### Parámetros
+### Parameters
 
-- `--task-id`: ID del CVE task (requerido)
-  - Ejemplo: `CVE-2023-4863_libwebp`, `CVE-2023-52425_expat`, etc.
+- `--task-id`: CVE task ID (required)
+  - Example: `CVE-2023-4863_libwebp`, `CVE-2023-52425_expat`, etc.
   
-- `--level`: Nivel de información para el LLM (default: L3)
-  - `L0`: Descripción básica del CVE
+- `--level`: Information level for the LLM (default: L3)
+  - `L0`: Basic CVE description
   - `L1`: + Patch/diff
-  - `L2`: + Archivo vulnerable
-  - `L3`: + Contexto completo (harness, docs)
+  - `L2`: + Vulnerable file
+  - `L3`: + Complete context (harness, docs)
   
-- `--max-iters`: Máximo de iteraciones (default: 10)
+- `--max-iters`: Maximum iterations (default: 10)
   
-- `--service`: Servicio Docker a testear (default: target-vuln)
-  - `target-vuln`: Versión vulnerable
-  - `target-fixed`: Versión parcheada (sanity check)
+- `--service`: Docker service to test (default: target-vuln)
+  - `target-vuln`: Vulnerable version
+  - `target-fixed`: Patched version (sanity check)
   
-- `--seed`: Archivo seed inicial (opcional)
-  - Si no se provee, se genera uno aleatorio
+- `--seed`: Initial seed file (optional)
+  - If not provided, a random seed will be generated
 
-### Ejemplos
+### Examples
 
-#### 1. Análisis básico con 5 iteraciones
+#### 1. Basic analysis with 5 iterations
 
 ```powershell
 python -m agents.openhands_llama3.run ^
@@ -145,7 +145,7 @@ python -m agents.openhands_llama3.run ^
     --max-iters 5
 ```
 
-#### 2. Usar seed personalizado
+#### 2. Use custom seed
 
 ```powershell
 python -m agents.openhands_llama3.run ^
@@ -155,7 +155,7 @@ python -m agents.openhands_llama3.run ^
     --seed myseeds\archive.tar
 ```
 
-#### 3. Verificar que el patch funciona (target-fixed)
+#### 3. Verify that the patch works (target-fixed)
 
 ```powershell
 python -m agents.openhands_llama3.run ^
@@ -165,26 +165,26 @@ python -m agents.openhands_llama3.run ^
     --service target-fixed
 ```
 
-## 📊 Estructura de salida
+## 📊 Output Structure
 
-Cada ejecución crea un directorio en `runs/`:
+Each execution creates a directory in `runs/`:
 
 ```
 runs/
 └── 20250202_143022_CVE-2023-4863_libwebp/
     └── CVE-2023-4863_libwebp/
         ├── iter_001/
-        │   ├── seed.bin          # Seed mutado
-        │   ├── command.txt       # Comando ejecutado
-        │   ├── analysis.json     # Output de ANALYZE
-        │   ├── generate.json     # Output de GENERATE
-        │   └── verify.json       # Output de VERIFY
+        │   ├── seed.bin          # Mutated seed
+        │   ├── command.txt       # Executed command
+        │   ├── analysis.json     # ANALYZE output
+        │   ├── generate.json     # GENERATE output
+        │   └── verify.json       # VERIFY output
         ├── iter_002/
         │   └── ...
-        └── summary.json          # Resumen de la ejecución
+        └── summary.json          # Execution summary
 ```
 
-### Archivo `summary.json`
+### `summary.json` file
 
 ```json
 {
@@ -199,21 +199,21 @@ runs/
 }
 ```
 
-## 🔍 Verificación de resultados
+## 🔍 Result Verification
 
-### 1. Ver salida del benchmark
+### 1. View benchmark output
 
 ```powershell
 type runs\20250202_143022_CVE-2023-4863_libwebp\CVE-2023-4863_libwebp\iter_007\command.txt
 ```
 
-### 2. Inspeccionar mutaciones propuestas
+### 2. Inspect proposed mutations
 
 ```powershell
 type runs\20250202_143022_CVE-2023-4863_libwebp\CVE-2023-4863_libwebp\iter_007\generate.json
 ```
 
-Ejemplo:
+Example:
 
 ```json
 {
@@ -225,9 +225,9 @@ Ejemplo:
 }
 ```
 
-### 3. Ver output del sanitizer
+### 3. View sanitizer output
 
-Los logs del benchmark están en los archivos `.json` de cada iteración:
+Benchmark logs are in the `.json` files for each iteration:
 
 ```powershell
 type runs\...\iter_007\verify.json | jq .stderr
@@ -238,7 +238,7 @@ type runs\...\iter_007\verify.json | jq .stderr
 ### Error: "OpenHands SDK not found"
 
 ```powershell
-# Asegurarse de estar en el entorno correcto
+# Make sure you're in the correct environment
 .venv-oh\Scripts\activate
 pip install -r requirements-openhands.txt
 ```
@@ -246,62 +246,62 @@ pip install -r requirements-openhands.txt
 ### Error: "Connection refused to Ollama"
 
 ```powershell
-# Verificar que Ollama está corriendo
+# Verify that Ollama is running
 ollama serve
 
-# En otra terminal, verificar conectividad
+# In another terminal, verify connectivity
 curl http://localhost:11434/api/tags
 ```
 
 ### Error: "Task not found"
 
 ```powershell
-# Listar tasks disponibles
+# List available tasks
 python -m scripts.bench list
 
-# Verificar que el task_id está bien escrito (case-sensitive)
+# Verify that the task_id is spelled correctly (case-sensitive)
 ```
 
 ### Error: "Docker service not running"
 
 ```powershell
-# Construir la imagen primero
+# Build the image first
 python -m scripts.bench build <task_id>
 
-# Verificar que se creó
+# Verify it was created
 docker images | findstr <task_id>
 ```
 
-### El LLM no propone buenas mutaciones
+### LLM is not proposing good mutations
 
-- **Aumentar nivel de información**: `--level L3` da más contexto
-- **Aumentar iteraciones**: `--max-iters 20`
-- **Probar otro modelo**: GPT-4o o Gemini suelen ser más precisos que LLaMA 3
-- **Revisar templates**: Los prompts están en `prompt_templates/`
+- **Increase information level**: `--level L3` provides more context
+- **Increase iterations**: `--max-iters 20`
+- **Try another model**: GPT-4o or Gemini are usually more accurate than LLaMA 3
+- **Review templates**: Prompts are in `prompt_templates/`
 
-### Pipeline muy lento
+### Pipeline is very slow
 
-- **Reducir timeout**: `LLM_TIMEOUT=60` en `.env`
-- **Usar modelo más rápido**: LLaMA 3 8B en lugar de 70B
-- **Reducir iteraciones**: `--max-iters 5`
+- **Reduce timeout**: `LLM_TIMEOUT=60` in `.env`
+- **Use faster model**: LLaMA 3 8B instead of 70B
+- **Reduce iterations**: `--max-iters 5`
 
-## 📚 Metodología
+## 📚 Methodology
 
-Ver [openhands_pipeline.md](openhands_pipeline.md) para detalles técnicos sobre:
+See [openhands_pipeline.md](openhands_pipeline.md) for technical details on:
 
-- Arquitectura del pipeline
-- Formato de prompts Jinja2
-- Operaciones de mutación soportadas
-- Estrategias de detección de crashes
-- Integración con el benchmark
+- Pipeline architecture
+- Jinja2 prompt format
+- Supported mutation operations
+- Crash detection strategies
+- Benchmark integration
 
-## 🔗 Referencias
+## 🔗 References
 
 - **OpenHands SDK**: https://github.com/All-Hands-AI/OpenHands
-- **LiteLLM** (backend de OpenHands): https://docs.litellm.ai/
+- **LiteLLM** (OpenHands backend): https://docs.litellm.ai/
 - **Ollama**: https://ollama.ai/
-- **Benchmark TFM-Justin**: Ver README.md principal
+- **TFM-Justin Benchmark**: See main README.md
 
-## 📄 Licencia
+## 📄 License
 
-MIT License - Ver archivo LICENSE en el directorio raíz.
+MIT License - See LICENSE file in the root directory.

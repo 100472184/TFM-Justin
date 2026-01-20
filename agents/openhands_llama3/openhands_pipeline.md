@@ -1,12 +1,12 @@
-# OpenHands Pipeline - Metodología Técnica
+# OpenHands Pipeline - Technical Methodology
 
-## 🎯 Visión general
+## 🎯 Overview
 
-Este pipeline implementa un sistema de generación de seeds guiado por LLM para gatillar vulnerabilidades en CVEs reales. A diferencia del fuzzing tradicional (fuerza bruta), el LLM actúa como "asistente estratégico" que propone mutaciones inteligentes basadas en el análisis del código vulnerable.
+This pipeline implements an LLM-guided seed generation system designed to trigger vulnerabilities in real CVEs. Unlike traditional fuzzing (brute force), the LLM acts as a "strategic assistant" that proposes intelligent mutations based on analysis of vulnerable code.
 
-## 🔄 Arquitectura del Pipeline
+## 🔄 Pipeline Architecture
 
-### Ciclo iterativo: ANALYZE → GENERATE → VERIFY
+### Iterative Loop: ANALYZE → GENERATE → VERIFY
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -56,20 +56,20 @@ Este pipeline implementa un sistema de generación de seeds guiado por LLM para 
                             └──► LOOP to ANALYZE (with updated history)
 ```
 
-## 📊 Niveles de Información (Context Levels)
+## 📊 Information Levels (Context Levels)
 
-El pipeline soporta 4 niveles de contexto para el LLM:
+The pipeline supports 4 context levels for the LLM:
 
-| Level | Descripción | Archivos incluidos |
-|-------|-------------|-------------------|
-| **L0** | Básico | `description.txt` |
+| Level | Description | Files included |
+|-------|-------------|----------------|
+| **L0** | Basic | `description.txt` |
 | **L1** | + Patch | L0 + `patch.diff` |
 | **L2** | + Vulnerable file | L1 + `vulnerable_file.txt` |
 | **L3** | + Full context | L2 + `harness_code.txt`, `docs.txt`, `build_commands.txt` |
 
-**Recomendación**: Usar L3 para mejores resultados, L0-L1 solo para pruebas rápidas.
+**Recommendation**: Use L3 for best results, L0-L1 only for quick tests.
 
-### Ejemplo de carga de contexto (L3)
+### Context loading example (L3)
 
 ```python
 context = {
@@ -83,90 +83,90 @@ context = {
 }
 ```
 
-## 🔧 Operaciones de Mutación
+## 🔧 Mutation Operations
 
-El LLM propone mutaciones en formato JSON que son aplicadas por `mutations.py`:
+The LLM proposes mutations in JSON format which are applied by `mutations.py`:
 
 ### 1. append_bytes
 
-Agrega bytes al final del seed.
+Appends bytes to the end of the seed.
 
 ```json
 {"op": "append_bytes", "hex": "deadbeef"}
 ```
 
-**Uso típico**: Extender archivos, agregar chunks malformados.
+**Typical use**: Extend files, add malformed chunks.
 
 ### 2. flip_bit
 
-Invierte un bit específico en un offset.
+Flips a specific bit at an offset.
 
 ```json
 {"op": "flip_bit", "offset": 123, "bit": 5}
 ```
 
-- `offset`: posición en bytes (0-indexed)
-- `bit`: índice del bit dentro del byte (0-7, donde 7 es MSB)
+- `offset`: position in bytes (0-indexed)
+- `bit`: bit index within the byte (0-7, where 7 is MSB)
 
-**Uso típico**: Corromper flags, magic numbers, checksums.
+**Typical use**: Corrupt flags, magic numbers, checksums.
 
 ### 3. overwrite_range
 
-Reemplaza bytes en un offset específico.
+Replaces bytes at a specific offset.
 
 ```json
 {"op": "overwrite_range", "offset": 10, "hex": "cafebabe"}
 ```
 
-**Uso típico**: Modificar headers, tamaños, offsets en estructuras de archivo.
+**Typical use**: Modify headers, sizes, offsets in file structures.
 
 ### 4. truncate
 
-Acorta el seed a una nueva longitud.
+Shortens the seed to a new length.
 
 ```json
 {"op": "truncate", "new_len": 200}
 ```
 
-**Uso típico**: Testear manejo de archivos incompletos/truncados.
+**Typical use**: Test handling of incomplete/truncated files.
 
 ### 5. repeat_range
 
-Repite un rango de bytes N veces.
+Repeats a byte range N times.
 
 ```json
 {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
 ```
 
-**Uso típico**: Crear inputs con datos repetidos (DoS, heap exhaustion).
+**Typical use**: Create inputs with repeated data (DoS, heap exhaustion).
 
-### Restricciones de seguridad
+### Security Constraints
 
-- **MAX_SEED_SIZE**: 1 MB (evitar DoS local)
-- **Validación estricta**: Todos los offsets/rangos se verifican antes de aplicar
-- **No RCE**: Mutaciones limitadas a manipulación de bytes, no generación de shellcode
+- **MAX_SEED_SIZE**: 1 MB (avoid local DoS)
+- **Strict validation**: All offsets/ranges are verified before applying
+- **No RCE**: Mutations limited to byte manipulation, no shellcode generation
 
 ## 🎨 Prompt Templates (Jinja2)
 
 ### analyze.j2
 
-**Propósito**: El LLM analiza el CVE y el estado actual del pipeline.
+**Purpose**: The LLM analyzes the CVE and the current pipeline state.
 
 **Inputs**:
-- `task_id`: Identificador del CVE
-- `level`: Nivel de información (L0-L3)
-- `iteration`: Iteración actual
-- `max_iters`: Máximo de iteraciones
-- `context`: Diccionario con secciones de contexto
-- `verify_history`: Lista de últimos 3 resultados de VERIFY
+- `task_id`: CVE identifier
+- `level`: Information level (L0-L3)
+- `iteration`: Current iteration
+- `max_iters`: Maximum iterations
+- `context`: Dictionary with context sections
+- `verify_history`: List of last 3 VERIFY results
 
-**Output esperado**:
+**Expected output**:
 ```json
 {
-  "summary": "Buffer overflow en libwebp al procesar chunks VP8X oversized",
+  "summary": "Buffer overflow in libwebp when processing oversized VP8X chunks",
   "hypotheses": [
-    "El crash ocurre cuando el campo 'canvas_width' excede MAX_CANVAS_SIZE",
-    "La validación de tamaño falla para valores cercanos a UINT32_MAX"
+    "The crash occurs when the 'canvas_width' field exceeds MAX_CANVAS_SIZE",
+    "Size validation fails for values near UINT32_MAX"
   ],
   "input_strategy": {
     "file_type_guess": "WebP",
@@ -176,67 +176,67 @@ Repite un rango de bytes N veces.
 }
 ```
 
-**Lógica de `stop_early`**:
-- `true`: Si el LLM determina que no hay forma de gatillar el CVE con mutaciones de seed
-- `false`: Continuar iterando
+**`stop_early` logic**:
+- `true`: If the LLM determines there's no way to trigger the CVE with seed mutations
+- `false`: Continue iterating
 
 ### generate.j2
 
-**Propósito**: El LLM propone mutaciones concretas basadas en el análisis.
+**Purpose**: The LLM proposes concrete mutations based on the analysis.
 
 **Inputs**:
-- `task_id`: Identificador del CVE
-- `iteration`: Iteración actual
-- `analysis`: Output de la fase ANALYZE
-- `seed_length`: Tamaño del seed actual en bytes
-- `seed_preview`: Primeros 256 bytes en hexadecimal
-- `verify_history`: Lista de últimos 3 resultados
+- `task_id`: CVE identifier
+- `iteration`: Current iteration
+- `analysis`: Output from the ANALYZE phase
+- `seed_length`: Current seed size in bytes
+- `seed_preview`: First 256 bytes in hexadecimal
+- `verify_history`: List of last 3 results
 
-**Output esperado**:
+**Expected output**:
 ```json
 {
   "mutations": [
     {"op": "overwrite_range", "offset": 12, "hex": "ffffffff"},
     {"op": "flip_bit", "offset": 30, "bit": 7}
   ],
-  "rationale": "Sobrescribir el campo canvas_width con UINT32_MAX y corromper el bit de validación"
+  "rationale": "Overwrite canvas_width field with UINT32_MAX and corrupt validation bit"
 }
 ```
 
-**Estrategia recomendada para el LLM**:
-- **1-5 mutaciones por iteración**: Incremental, no drástico
-- **Basarse en verify_history**: No repetir mutaciones que ya fallaron
-- **Considerar formato de archivo**: Headers, chunks, metadatos
+**Recommended strategy for the LLM**:
+- **1-5 mutations per iteration**: Incremental, not drastic
+- **Build on verify_history**: Don't repeat mutations that already failed
+- **Consider file format**: Headers, chunks, metadata
 
-### verify.j2 (opcional)
+### verify.j2 (optional)
 
-**Propósito**: El LLM interpreta los resultados del benchmark y sugiere ajustes.
+**Purpose**: The LLM interprets benchmark results and suggests adjustments.
 
 **Inputs**:
-- `task_id`: Identificador del CVE
-- `iteration`: Iteración actual
-- `exit_code`: Código de salida del benchmark
-- `success_signal`: Bool indicando si se detectó crash
-- `stdout_preview`: Primeros 2000 chars de stdout
-- `stderr_preview`: Primeros 2000 chars de stderr
+- `task_id`: CVE identifier
+- `iteration`: Current iteration
+- `exit_code`: Benchmark exit code
+- `success_signal`: Bool indicating if crash was detected
+- `stdout_preview`: First 2000 chars of stdout
+- `stderr_preview`: First 2000 chars of stderr
 
-**Output esperado**:
+**Expected output**:
 ```json
 {
-  "interpretation": "AddressSanitizer detectó heap-buffer-overflow en ReadVP8XChunk+0x42",
+  "interpretation": "AddressSanitizer detected heap-buffer-overflow in ReadVP8XChunk+0x42",
   "next_steps": [
-    "Intentar valores más extremos en canvas_height también",
-    "Probar combinaciones de width/height que causen integer overflow"
+    "Try more extreme values in canvas_height as well",
+    "Test width/height combinations that cause integer overflow"
   ],
   "confidence": "high"
 }
 ```
 
-**Nota**: Este output NO afecta la lógica del pipeline, solo se agrega al contexto para la siguiente iteración de ANALYZE.
+**Note**: This output does NOT affect pipeline logic, it's only added to context for the next ANALYZE iteration.
 
-## 🔍 Oráculo de Detección
+## 🔍 Detection Oracle
 
-El pipeline detecta crashes/sanitizers mediante búsqueda de palabras clave:
+The pipeline detects crashes/sanitizers through keyword searching:
 
 ```python
 CRASH_KEYWORDS = [
@@ -256,13 +256,13 @@ CRASH_KEYWORDS = [
 ]
 ```
 
-**Función**: `detect_success_signal(stdout, stderr, exit_code) -> bool`
+**Function**: `detect_success_signal(stdout, stderr, exit_code) -> bool`
 
-**Retorna `True` si**:
-- Alguna keyword aparece en stdout O stderr (case-insensitive)
-- El exit_code indica crash (típicamente != 0, pero depende del harness)
+**Returns `True` if**:
+- Any keyword appears in stdout OR stderr (case-insensitive)
+- The exit_code indicates crash (typically != 0, but depends on harness)
 
-**Integración con el benchmark**:
+**Benchmark integration**:
 ```python
 result = subprocess.run(
     ["python", "-m", "scripts.bench", "run", task_id, 
@@ -274,26 +274,26 @@ result = subprocess.run(
 success = detect_success_signal(result.stdout, result.stderr, result.returncode)
 ```
 
-## 💾 Persistencia y Logs
+## 💾 Persistence and Logs
 
-### Estructura de directorio runs/
+### runs/ directory structure
 
 ```
 runs/
 └── {timestamp}_{task_id}/
     └── {task_id}/
         ├── iter_001/
-        │   ├── seed.bin          # Seed mutado de esta iteración
-        │   ├── command.txt       # Comando exacto ejecutado
-        │   ├── analysis.json     # Output de ANALYZE
-        │   ├── generate.json     # Output de GENERATE
-        │   └── verify.json       # Output de VERIFY (stdout, stderr, exit_code)
+        │   ├── seed.bin          # Mutated seed for this iteration
+        │   ├── command.txt       # Exact command executed
+        │   ├── analysis.json     # ANALYZE output
+        │   ├── generate.json     # GENERATE output
+        │   └── verify.json       # VERIFY output (stdout, stderr, exit_code)
         ├── iter_002/
         │   └── ...
-        └── summary.json          # Resumen final de la ejecución
+        └── summary.json          # Final execution summary
 ```
 
-### Formato de summary.json
+### summary.json format
 
 ```json
 {
@@ -308,7 +308,7 @@ runs/
 }
 ```
 
-### Formato de verify.json (por iteración)
+### verify.json format (per iteration)
 
 ```json
 {
@@ -320,23 +320,23 @@ runs/
 }
 ```
 
-## 🔐 Consideraciones de Seguridad
+## 🔐 Security Considerations
 
 ### 1. Ethical Research Only
 
-- **Seeds vacíos por defecto**: Los directorios `tasks/*/seeds/` NO contienen exploits
-- **No RCE**: El pipeline NO genera shellcode ni payloads ofensivos
-- **Aislamiento Docker**: Todas las pruebas se ejecutan en contenedores aislados
+- **Empty seeds by default**: The `tasks/*/seeds/` directories do NOT contain exploits
+- **No RCE**: The pipeline does NOT generate shellcode or offensive payloads
+- **Docker isolation**: All tests run in isolated containers
 
 ### 2. Rate Limiting
 
-- **LLM_TIMEOUT**: Evita llamadas LLM que cuelguen indefinidamente
-- **LLM_NUM_RETRIES**: Límite de reintentos ante errores
-- **MAX_SEED_SIZE**: 1 MB máximo para evitar DoS local
+- **LLM_TIMEOUT**: Prevents LLM calls from hanging indefinitely
+- **LLM_NUM_RETRIES**: Retry limit for errors
+- **MAX_SEED_SIZE**: 1 MB maximum to avoid local DoS
 
 ### 3. Prompt Safety
 
-Los templates Jinja2 incluyen disclaimers explícitos:
+The Jinja2 templates include explicit disclaimers:
 
 ```
 **IMPORTANT RULES:**
@@ -345,11 +345,11 @@ Los templates Jinja2 incluyen disclaimers explícitos:
 - Focus on seed mutation strategies to trigger crashes/sanitizers
 ```
 
-## 🧪 Casos de Uso
+## 🧪 Use Cases
 
-### 1. Fuzzing guiado para CVEs conocidos
+### 1. Guided fuzzing for known CVEs
 
-**Objetivo**: Validar que un CVE es reproducible con un seed generado automáticamente.
+**Objective**: Validate that a CVE is reproducible with an automatically generated seed.
 
 ```powershell
 python -m agents.openhands_llama3.run ^
@@ -358,12 +358,12 @@ python -m agents.openhands_llama3.run ^
     --max-iters 20
 ```
 
-### 2. Comparación de modelos LLM
+### 2. LLM model comparison
 
-**Objetivo**: Evaluar qué modelo genera mejores seeds.
+**Objective**: Evaluate which model generates better seeds.
 
 ```powershell
-# LLaMA 3 local
+# Local LLaMA 3
 LLM_MODEL=ollama/llama3 python -m agents.openhands_llama3.run --task-id ...
 
 # GPT-4o
@@ -373,115 +373,115 @@ LLM_MODEL=gpt-4o python -m agents.openhands_llama3.run --task-id ...
 LLM_MODEL=gemini/gemini-1.5-pro python -m agents.openhands_llama3.run --task-id ...
 ```
 
-Comparar:
-- Tasa de éxito (% de tasks que gatillan el CVE)
-- Iteraciones necesarias hasta el primer crash
-- Calidad del análisis en `analysis.json`
+Compare:
+- Success rate (% of tasks that trigger the CVE)
+- Iterations needed until first crash
+- Quality of analysis in `analysis.json`
 
-### 3. Benchmark de niveles de información
+### 3. Information level benchmarking
 
-**Objetivo**: Determinar si más contexto mejora los resultados.
+**Objective**: Determine if more context improves results.
 
 ```powershell
-# L0 (mínimo contexto)
+# L0 (minimum context)
 python -m agents.openhands_llama3.run --task-id ... --level L0 --max-iters 50
 
-# L3 (máximo contexto)
+# L3 (maximum context)
 python -m agents.openhands_llama3.run --task-id ... --level L3 --max-iters 50
 ```
 
-Comparar tasas de éxito y velocidad de convergencia.
+Compare success rates and convergence speed.
 
-### 4. Verificación de patches
+### 4. Patch verification
 
-**Objetivo**: Confirmar que la versión parcheada NO crashea con el mismo seed.
+**Objective**: Confirm that the patched version does NOT crash with the same seed.
 
 ```powershell
-# 1. Generar seed con target-vuln
+# 1. Generate seed with target-vuln
 python -m agents.openhands_llama3.run ^
     --task-id CVE-2023-4863_libwebp ^
     --service target-vuln ^
     --max-iters 10
 
-# 2. Si tuvo éxito, copiar el seed del iter exitoso
+# 2. If successful, copy the seed from the successful iter
 copy runs\<timestamp>\<task>\iter_007\seed.bin exploit_seed.bin
 
-# 3. Probar contra target-fixed
+# 3. Test against target-fixed
 python -m scripts.bench run CVE-2023-4863_libwebp ^
     --service target-fixed ^
     --seed exploit_seed.bin
 ```
 
-**Resultado esperado**: `target-fixed` debe retornar exit_code=0 sin crashes.
+**Expected result**: `target-fixed` should return exit_code=0 without crashes.
 
-## 🚧 Limitaciones
+## 🚧 Limitations
 
-### 1. LLMs no son expertos en fuzzing
+### 1. LLMs are not fuzzing experts
 
-- **Hipótesis imprecisas**: El LLM puede proponer mutaciones basadas en suposiciones incorrectas
-- **Falta de feedback preciso**: Solo ve stdout/stderr, no el estado interno del proceso
-- **Sesgos del entrenamiento**: Puede favorecer patrones comunes sobre edge cases
+- **Imprecise hypotheses**: The LLM may propose mutations based on incorrect assumptions
+- **Lack of precise feedback**: Only sees stdout/stderr, not the internal process state
+- **Training biases**: May favor common patterns over edge cases
 
-### 2. Dependencia del contexto
+### 2. Context dependency
 
-- **L0/L1**: Muy poco contexto → mutaciones aleatorias
-- **L2/L3**: Mejora significativa, pero requiere documentación de calidad
+- **L0/L1**: Very little context → random mutations
+- **L2/L3**: Significant improvement, but requires quality documentation
 
-### 3. Tipos de CVEs limitados
+### 3. Limited CVE types
 
-Este enfoque funciona mejor para:
+This approach works best for:
 - **Memory corruption**: Buffer overflows, use-after-free, double-free
-- **Logic errors**: Validaciones incorrectas, integer overflows
+- **Logic errors**: Incorrect validations, integer overflows
 
-**NO funciona bien para**:
-- **Race conditions**: Requieren timing preciso, no solo inputs malformados
-- **Side-channel attacks**: Fuera del scope del fuzzing tradicional
+**Does NOT work well for**:
+- **Race conditions**: Require precise timing, not just malformed inputs
+- **Side-channel attacks**: Outside the scope of traditional fuzzing
 
-## 🔮 Futuras Mejoras
+## 🔮 Future Improvements
 
-### 1. Feedback loop mejorado
+### 1. Improved feedback loop
 
-- **Simbolización de stacktraces**: Pasar al LLM las líneas exactas de código donde crashea
-- **Cobertura de código**: Instrumentar con gcov/llvm-cov para guiar al LLM
+- **Stacktrace symbolization**: Pass the LLM exact lines of code where crashes occur
+- **Code coverage**: Instrument with gcov/llvm-cov to guide the LLM
 
 ### 2. Multi-agent
 
-- **Agente ANALYZE**: Especializado en análisis de código
-- **Agente GENERATE**: Especializado en fuzzing strategies
-- **Agente VERIFY**: Interpreta outputs de sanitizers
+- **ANALYZE agent**: Specialized in code analysis
+- **GENERATE agent**: Specialized in fuzzing strategies
+- **VERIFY agent**: Interprets sanitizer outputs
 
 ### 3. Learning from history
 
-- Almacenar en base de datos qué mutaciones funcionaron para CVEs similares
-- Usar embeddings para encontrar patrones en CVEs exitosos
+- Store in database which mutations worked for similar CVEs
+- Use embeddings to find patterns in successful CVEs
 
-### 4. Optimización de prompts
+### 4. Prompt optimization
 
-- A/B testing de diferentes templates
-- Fine-tuning de modelos en dataset de CVEs + seeds exitosos
+- A/B testing of different templates
+- Fine-tuning models on CVE + successful seed datasets
 
-## 📚 Referencias
+## 📚 References
 
-### Papers relevantes
+### Relevant Papers
 
-- **"Fuzzing with LLMs"** (múltiples trabajos recientes en 2023-2024)
-- **"ChatGPT for Vulnerability Discovery"** - Análisis de capacidades actuales
-- **"PwnGPT"** - Inspiración para este pipeline
+- **"Fuzzing with LLMs"** (multiple recent works in 2023-2024)
+- **"ChatGPT for Vulnerability Discovery"** - Analysis of current capabilities
+- **"PwnGPT"** - Inspiration for this pipeline
 
-### Herramientas relacionadas
+### Related Tools
 
-- **AFL++**: Fuzzer tradicional con mutation strategies
+- **AFL++**: Traditional fuzzer with mutation strategies
 - **LibFuzzer**: In-process fuzzing (LLVM)
-- **Syzkaller**: Fuzzer de syscalls del kernel Linux
+- **Syzkaller**: Linux kernel syscall fuzzer
 
 ### Datasets
 
-- **OSS-Fuzz**: Bugs encontrados en proyectos open source
-- **CVE Details**: Base de datos de CVEs
-- **Exploit-DB**: Exploits publicados (PoC)
+- **OSS-Fuzz**: Bugs found in open source projects
+- **CVE Details**: CVE database
+- **Exploit-DB**: Published exploits (PoC)
 
-## 📄 Licencia
+## 📄 License
 
-MIT License - Este pipeline es para investigación académica y educación en seguridad.
+MIT License - This pipeline is for academic research and security education.
 
-**DISCLAIMER**: El uso de esta herramienta para actividades maliciosas es responsabilidad exclusiva del usuario. Los autores no se hacen responsables del mal uso.
+**DISCLAIMER**: The use of this tool for malicious activities is the sole responsibility of the user. The authors are not responsible for misuse.
