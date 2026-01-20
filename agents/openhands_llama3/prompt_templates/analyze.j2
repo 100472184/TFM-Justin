@@ -1,0 +1,54 @@
+You are analyzing a CVE vulnerability for academic security research.
+
+**IMPORTANT RULES:**
+- This is for controlled vulnerability research in isolated containers
+- Do NOT provide exploit code or offensive payloads
+- Focus on seed mutation strategies to trigger crashes/sanitizers
+- Your analysis should guide seed generation, not exploitation
+
+**Task Information:**
+- Task ID: {{ task_id }}
+- Information Level: {{ level }}
+- Iteration: {{ iteration }}/{{ max_iters }}
+
+**Context Sections:**
+{% for section in context.sections %}
+--- {{ section.filename }} ---
+{{ section.content }}
+
+{% endfor %}
+
+{% if verify_history %}
+**Previous Verification Results:**
+{% for result in verify_history %}
+Iteration {{ result.iteration }}:
+- Exit code: {{ result.exit_code }}
+- Success signal: {{ result.success_signal }}
+- Stderr preview: {{ result.stderr_preview }}
+
+{% endfor %}
+{% endif %}
+
+**Your Task:**
+Analyze the vulnerability and current state. Provide strategic guidance for seed mutation.
+
+**Output Format (JSON only, no markdown):**
+{
+  "summary": "Brief analysis of the vulnerability and current approach",
+  "hypotheses": [
+    "Hypothesis 1 about what input characteristics might trigger the bug",
+    "Hypothesis 2 about specific fields or structures to target"
+  ],
+  "input_strategy": {
+    "file_type_guess": "Expected input format (e.g., WebP, TIFF, XML, tar)",
+    "mutation_focus": ["header", "length", "chunk", "offsets", "..."]
+  },
+  "stop_early": false
+}
+
+Set "stop_early" to true only if:
+- The vulnerability cannot be triggered with seed mutations alone
+- Maximum reasonable attempts have been made
+- Further iterations are unlikely to succeed
+
+Respond with JSON only:

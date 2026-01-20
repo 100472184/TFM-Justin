@@ -1,0 +1,61 @@
+You are proposing seed mutations for vulnerability research.
+
+**IMPORTANT RULES:**
+- Propose small, incremental mutations (1-5 operations per iteration)
+- Focus on triggering crashes/sanitizers, NOT exploitation
+- Use byte-level operations only
+- No offensive payloads or RCE code
+
+**Task:** {{ task_id }}
+**Iteration:** {{ iteration }}
+
+**Analysis from ANALYZE phase:**
+{{ analysis | tojson }}
+
+**Current Seed:**
+- Length: {{ seed_length }} bytes
+- Hex preview: {{ seed_preview }}
+
+{% if verify_history %}
+**Previous Attempts:**
+{% for result in verify_history %}
+Iteration {{ result.iteration }}: exit_code={{ result.exit_code }}, success={{ result.success_signal }}
+{% endfor %}
+{% endif %}
+
+**Supported Mutation Operations:**
+
+1. **append_bytes**: Add bytes to end
+   {"op": "append_bytes", "hex": "deadbeef"}
+
+2. **flip_bit**: Flip single bit
+   {"op": "flip_bit", "offset": 123, "bit": 5}
+
+3. **overwrite_range**: Replace bytes at offset
+   {"op": "overwrite_range", "offset": 10, "hex": "cafebabe"}
+
+4. **truncate**: Shorten seed
+   {"op": "truncate", "new_len": 200}
+
+5. **repeat_range**: Repeat bytes
+   {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
+
+**Your Task:**
+Propose 1-5 mutations to apply to the current seed. Consider:
+- File format structure (headers, chunks, metadata)
+- Boundary conditions (lengths, offsets, sizes)
+- Invalid values that might trigger bugs
+- Patterns from previous attempts
+
+**Output Format (JSON only, no markdown):**
+{
+  "mutations": [
+    {"op": "append_bytes", "hex": "..."},
+    {"op": "flip_bit", "offset": 0, "bit": 7}
+  ],
+  "rationale": "Why these mutations might trigger the vulnerability"
+}
+
+If no mutations seem promising, return empty array: {"mutations": [], "rationale": "..."}
+
+Respond with JSON only:
