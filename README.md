@@ -3,7 +3,7 @@
 Benchmark reproducible de CVEs **userland/system** (C/C++) con verificación automática **pre-patch vs post-patch** usando **Docker** y **sanitizers (ASan/UBSan)**.
 
 ## Objetivo
-- Proveer una colección pequeña (10) de CVEs seleccionadas para un TFM.
+- Proveer una colección pequeña (10) de CVEs seleccionadas.
 - Cada CVE se ejecuta en un entorno reproducible (contenedores) y se evalúa con un oracle automático:
   - "crash en versión vulnerable" + "no crash en versión parcheada".
 - Diseñado para evaluar agentes LLM en un pipeline por fases:
