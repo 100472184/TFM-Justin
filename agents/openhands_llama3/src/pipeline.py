@@ -141,6 +141,10 @@ def run_pipeline(
     print("[bold cyan]Initializing LLM client...[/bold cyan]")
     llm = OpenHandsLLMClient()
     
+    # Convert seed_path to Path if it's a string
+    if isinstance(seed_path, str):
+        seed_path = Path(seed_path)
+    
     # Load seed
     if not seed_path.exists():
         print(f"[yellow]Warning: Seed not found at {seed_path}, creating empty seed[/yellow]")
