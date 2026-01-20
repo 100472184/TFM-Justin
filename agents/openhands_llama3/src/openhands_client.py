@@ -20,27 +20,29 @@ class OpenHandsLLMClient:
         if self.model.startswith("ollama/") and not self.base_url:
             self.base_url = "http://localhost:11434"
         
-        # Initialize OpenHands LLM
+        # Initialize LiteLLM directly (OpenHands uses it internally)
         try:
-            from openhands.core.llm import LLM
+            import litellm
             
-            kwargs = {
+            # Configure LiteLLM
+            litellm.set_verbose = False
+            
+            # Store config for completion calls
+            self.llm_kwargs = {
                 "model": self.model,
                 "timeout": self.timeout,
-                "num_retries": self.num_retries,
             }
             
             if self.api_key:
-                kwargs["api_key"] = self.api_key
+                self.llm_kwargs["api_key"] = self.api_key
             
             if self.base_url:
-                kwargs["base_url"] = self.base_url
+                self.llm_kwargs["api_base"] = self.base_url
             
-            self.llm = LLM(**kwargs)
         except ImportError as e:
             raise RuntimeError(
-                "Failed to import OpenHands SDK. "
-                "Install with: pip install openhands-sdk"
+                "Failed to import litellm. "
+                "Install with: pip install litellm"
             ) from e
     
     def completion_json(
@@ -69,18 +71,15 @@ class OpenHandsLLMClient:
         
         for attempt in range(max_retries + 1):
             try:
-                # Call LLM
-                response = self.llm.completion(messages=messages)
+                # Call LiteLLM
+                import litellm
+                response = litellm.completion(
+                    messages=messages,
+                    **self.llm_kwargs
+                )
                 
-                # Extract content
-                if hasattr(response, 'choices') and response.choices:
-                    content = response.choices[0].message.content
-                elif hasattr(response, 'content'):
-                    content = response.content
-                elif isinstance(response, dict) and 'content' in response:
-                    content = response['content']
-                else:
-                    content = str(response)
+                # Extract content from response
+                content = response.choices[0].message.content
                 
                 # Try to parse JSON
                 # Remove markdown code blocks if present
