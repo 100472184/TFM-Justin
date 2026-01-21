@@ -274,6 +274,9 @@ def run_pipeline(
         
         # Apply mutations
         mutations = generation.get("mutations", [])
+        mutation_success = False
+        mutation_error = None
+        
         if not mutations:
             print("[yellow]  No mutations proposed, using current seed[/yellow]")
             new_seed = current_seed
@@ -281,9 +284,11 @@ def run_pipeline(
             try:
                 new_seed = apply_mutations(current_seed, mutations)
                 print(f"  Applied {len(mutations)} mutation(s): {len(current_seed)} → {len(new_seed)} bytes")
+                mutation_success = True
             except Exception as e:
                 print(f"[red]  Mutation failed: {e}[/red]")
                 new_seed = current_seed
+                mutation_error = str(e)
         
         # Save new seed
         seed_filename = f"mutated_seed_it{iteration:02d}.bin"
@@ -294,32 +299,61 @@ def run_pipeline(
         # ===== PHASE 3: VERIFY =====
         print("\n[bold green]→ VERIFY[/bold green]")
         
-        verify_result = run_benchmark(repo_root, task_id, service, seed_file)
+        # Test BOTH vulnerable and fixed versions to ensure CVE-specific crash
+        print("  Testing vulnerable version...")
+        verify_vuln = run_benchmark(repo_root, task_id, service, seed_file)
+        
+        print("  Testing fixed version...")
+        verify_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
+        
+        # Combine results
+        verify_result = {
+            "vuln_exit_code": verify_vuln["exit_code"],
+            "vuln_stdout": verify_vuln["stdout"],
+            "vuln_stderr": verify_vuln["stderr"],
+            "vuln_crashes": verify_vuln["success_signal"],
+            "fixed_exit_code": verify_fixed["exit_code"],
+            "fixed_stdout": verify_fixed["stdout"],
+            "fixed_stderr": verify_fixed["stderr"],
+            "fixed_crashes": verify_fixed["success_signal"],
+            "success": verify_vuln["success_signal"] and not verify_fixed["success_signal"],
+            "notes": "CVE-specific crash" if (verify_vuln["success_signal"] and not verify_fixed["success_signal"]) else 
+                     "Both versions crash" if (verify_vuln["success_signal"] and verify_fixed["success_signal"]) else
+                     "No crash detected",
+            "mutation_applied": mutation_success,
+            "mutation_error": mutation_error
+        }
         
         write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
         
         # Save command
-        cmd_str = f"python -m scripts.bench run {task_id} --service {service} --seed {seed_file}"
-        write_text(iter_dir / "command.txt", cmd_str)
+        cmd_vuln = f"python -m scripts.bench run {task_id} --service target-vuln --seed {seed_file}"
+        cmd_fixed = f"python -m scripts.bench run {task_id} --service target-fixed --seed {seed_file}"
+        cmd_eval = f"python -m scripts.bench evaluate {task_id} --seed {seed_file}"
+        write_text(iter_dir / "command.txt", f"{cmd_vuln}\n\n# Fixed version:\n{cmd_fixed}\n\n# Evaluate:\n{cmd_eval}")
         
-        print(f"  Exit code: {verify_result['exit_code']}")
-        print(f"  Success signal: {verify_result['success_signal']}")
-        print(f"  Notes: {verify_result['notes']}")
+        print(f"  Vulnerable: exit_code={verify_result['vuln_exit_code']}, crashes={verify_result['vuln_crashes']}")
+        print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
+        print(f"  [bold]Success: {verify_result['success']}[/bold] - {verify_result['notes']}")
         
-        if verify_result["stderr"]:
-            print(f"  STDERR preview: {safe_truncate(verify_result['stderr'], 200)}")
-        
-        # Add to history
+        # Add to history with complete information for next iteration
         verify_history.append({
             "iteration": iteration,
-            "exit_code": verify_result["exit_code"],
-            "success_signal": verify_result["success_signal"],
-            "stderr_preview": safe_truncate(verify_result["stderr"], 500)
+            "vuln_crashes": verify_result["vuln_crashes"],
+            "fixed_crashes": verify_result["fixed_crashes"],
+            "vuln_exit_code": verify_result["vuln_exit_code"],
+            "fixed_exit_code": verify_result["fixed_exit_code"],
+            "success": verify_result["success"],
+            "notes": verify_result["notes"],
+            "mutations_applied": mutations if mutations else [],
+            "mutation_success": mutation_success,
+            "vuln_stderr_preview": safe_truncate(verify_result["vuln_stdout"], 500),
+            "fixed_stderr_preview": safe_truncate(verify_result["fixed_stdout"], 500)
         })
         
-        # Check success
-        if verify_result["success_signal"]:
-            print(f"\n[bold green]✓ SUCCESS! Vulnerability triggered at iteration {iteration}[/bold green]")
+        # Check success - now based on CVE-specific crash
+        if verify_result["success"]:
+            print(f"\n[bold green]🎉 SUCCESS! CVE-specific crash detected in iteration {iteration}[/bold green]")
             success = True
             break
     

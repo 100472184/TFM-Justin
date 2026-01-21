@@ -24,7 +24,12 @@ You are proposing seed mutations for vulnerability research.
 {% if verify_history %}
 **Previous Attempts:**
 {% for result in verify_history %}
-Iteration {{ result.iteration }}: exit_code={{ result.exit_code }}, success={{ result.success_signal }}
+Iteration {{ result.iteration }}:
+- Mutations: {{ result.mutations_applied | tojson }}
+- Result: vuln_crashes={{ result.vuln_crashes }}, fixed_crashes={{ result.fixed_crashes }}
+- Success: {{ result.success }} ({{ result.notes }})
+- Mutation applied: {{ result.mutation_success }}
+
 {% endfor %}
 {% endif %}
 
@@ -52,10 +57,21 @@ Propose 1-5 mutations to apply to the current seed. Consider:
 - Invalid values that might trigger bugs
 - Patterns from previous attempts
 
+**CRITICAL for CVE-2024-57970 (libarchive GNU longlink):**
+- The vulnerability is triggered by TRUNCATED TAR files
+- Start with valid 3KB TAR, then truncate progressively
+- Target offsets: 768 (mid-linkname), 637 (half-payload), 761 (before null)
+- Example: {"op": "truncate", "new_len": 768}
+
+**Hex String Rules:**
+- MUST have EVEN number of characters (e.g., "deadbeef" = 8 chars)
+- INVALID: "020303030" (9 chars), "abc" (3 chars)
+- VALID: "02030303" (8 chars), "abcd" (4 chars)
+
 **Output Format (JSON only, no markdown):**
 {
   "mutations": [
-    {"op": "append_bytes", "hex": "..."},
+    {"op": "truncate", "new_len": 768},
     {"op": "flip_bit", "offset": 0, "bit": 7}
   ],
   "rationale": "Why these mutations might trigger the vulnerability"
