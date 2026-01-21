@@ -3,7 +3,27 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-ASAN_RE = re.compile(r"AddressSanitizer|UndefinedBehaviorSanitizer|ASAN:", re.IGNORECASE)
+# Sanitizer keywords
+ASAN_RE = re.compile(r"AddressSanitizer|UndefinedBehaviorSanitizer|ASAN:|UBSAN:", re.IGNORECASE)
+
+# Generic crash keywords
+CRASH_RE = re.compile(
+    r"segmentation fault|"
+    r"dumped core|"
+    r"core dumped|"
+    r"SIGSEGV|"
+    r"SIGABRT|"
+    r"heap-buffer-overflow|"
+    r"stack-buffer-overflow|"
+    r"use-after-free|"
+    r"double-free|"
+    r"SUMMARY: AddressSanitizer|"
+    r"SUMMARY: UndefinedBehaviorSanitizer",
+    re.IGNORECASE
+)
+
+# Crash exit codes (SIGSEGV=11, SIGABRT=6, with 128 offset)
+CRASH_EXIT_CODES = {139, 134, -11, -6, 11, 6}
 
 @dataclass(frozen=True)
 class RunResult:
@@ -12,7 +32,23 @@ class RunResult:
     stderr: str
 
 def looks_like_sanitizer_crash(res: RunResult) -> bool:
-    return bool(ASAN_RE.search(res.stderr) or ASAN_RE.search(res.stdout))
+    """
+    Detect if result shows any crash indication:
+    - Sanitizer output (ASan/UBSan)
+    - Crash keywords (segfault, core dump)
+    - Crash exit codes (139=SIGSEGV, 134=SIGABRT)
+    """
+    combined = res.stdout + "\n" + res.stderr
+    
+    # Check for sanitizer or crash keywords
+    if ASAN_RE.search(combined) or CRASH_RE.search(combined):
+        return True
+    
+    # Check exit code
+    if res.exit_code in CRASH_EXIT_CODES:
+        return True
+    
+    return False
 
 @dataclass(frozen=True)
 class Verdict:

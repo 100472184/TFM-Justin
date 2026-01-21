@@ -81,15 +81,35 @@ class OpenHandsLLMClient:
                 # Extract content from response
                 content = response.choices[0].message.content
                 
-                # Try to parse JSON
-                # Remove markdown code blocks if present
+                # Try to parse JSON with aggressive cleaning
                 content = content.strip()
+                
+                # Remove markdown code blocks
                 if content.startswith("```json"):
                     content = content[7:]
                 if content.startswith("```"):
                     content = content[3:]
                 if content.endswith("```"):
                     content = content[:-3]
+                content = content.strip()
+                
+                # Remove comments (// and /* */ style)
+                import re
+                # Remove single-line comments
+                content = re.sub(r'//.*?$', '', content, flags=re.MULTILINE)
+                # Remove multi-line comments
+                content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+                
+                # Try to extract JSON if embedded in text
+                if not content.startswith('{') and not content.startswith('['):
+                    # Try to find JSON object
+                    match = re.search(r'(\{.*\}|\[.*\])', content, re.DOTALL)
+                    if match:
+                        content = match.group(1)
+                
+                # Remove trailing commas before closing braces/brackets
+                content = re.sub(r',(\s*[}\]])', r'\1', content)
+                
                 content = content.strip()
                 
                 return json.loads(content)

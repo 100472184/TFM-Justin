@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, List, Any
 from jinja2 import Environment, FileSystemLoader
@@ -20,33 +21,51 @@ def detect_success_signal(stdout: str, stderr: str, exit_code: int) -> bool:
     Detect if execution shows crash/sanitizer signals.
     
     Success indicators:
-    - Non-zero exit code (crash)
+    - Crash exit codes (139=SIGSEGV, 134=SIGABRT)
     - Sanitizer keywords in stderr/stdout
+    - Core dumps, segmentation faults
     """
     # Keywords that indicate success (vulnerability triggered)
     CRASH_KEYWORDS = [
-        "AddressSanitizer",
-        "UndefinedBehaviorSanitizer",
+        "addresssanitizer",           # ASan
+        "undefinedbehaviorsanitizer", # UBSan
         "heap-buffer-overflow",
         "stack-buffer-overflow",
         "heap-use-after-free",
-        "SEGV",
-        "SIGSEGV",
-        "SIGABRT",
+        "segv",
+        "sigsegv",
+        "sigabrt",
         "double-free",
-        "memory leak",
         "use-after-free",
         "out-of-bounds",
-        "ASAN:",
-        "UBSAN:",
+        "asan:",
+        "ubsan:",
+        "segmentation fault",
+        "dumped core",
+        "core dumped",
+        "aborted",
+        "summary: addresssanitizer",  # ASan summary
+        "summary: undefinedbehavior", # UBSan summary
     ]
     
     combined_output = (stdout + "\n" + stderr).lower()
     
-    # Check for keywords
+    # Check for keywords (all lowercase now)
     for keyword in CRASH_KEYWORDS:
-        if keyword.lower() in combined_output:
+        if keyword in combined_output:
+            print(f"[cyan]  ✓ Detected crash keyword: '{keyword}'[/cyan]")
             return True
+    
+    # Check exit codes that indicate crash
+    # 139 = 128 + 11 (SIGSEGV)
+    # 134 = 128 + 6 (SIGABRT)
+    CRASH_EXIT_CODES = [139, 134, -11, -6, 11, 6]
+    if exit_code in CRASH_EXIT_CODES:
+        print(f"[cyan]  ✓ Detected crash exit code: {exit_code}[/cyan]")
+        return True
+    # 134 = 128 + 6 (SIGABRT)
+    if exit_code in [139, 134, -11, -6]:
+        return True
     
     # Non-zero exit code might indicate crash
     # But be conservative: only consider it success if keywords found
@@ -69,8 +88,9 @@ def run_benchmark(
     - success_signal: bool
     """
     # Build command: python -m scripts.bench run <task_id> --service <service> --seed <seed_path>
+    # Use sys.executable to ensure same Python interpreter (with venv dependencies)
     cmd = [
-        "python", "-m", "scripts.bench",
+        sys.executable, "-m", "scripts.bench",
         "run", task_id,
         "--service", service,
         "--seed", str(seed_path.absolute())
@@ -88,6 +108,15 @@ def run_benchmark(
         stdout = result.stdout
         stderr = result.stderr
         exit_code = result.returncode
+        
+        # CRITICAL: Parse the real exit code from stdout
+        # bench.py prints "exit_code=NNN" at the end
+        import re
+        match = re.search(r'exit_code=(\d+)', stdout)
+        if match:
+            real_exit_code = int(match.group(1))
+            # Use the real exit code from the binary, not the bench.py wrapper
+            exit_code = real_exit_code
     
     except subprocess.TimeoutExpired:
         stdout = ""
@@ -141,16 +170,34 @@ def run_pipeline(
     print("[bold cyan]Initializing LLM client...[/bold cyan]")
     llm = OpenHandsLLMClient()
     
-    # Convert seed_path to Path if it's a string
-    if isinstance(seed_path, str):
+    # Convert seed_path to Path if it's a string, or set to None if not provided
+    if seed_path is None:
+        # No seed provided, try to find base.tar
+        task_seeds_dir = repo_root / "tasks" / task_id / "seeds"
+        base_seed = task_seeds_dir / "base.tar"
+        
+        if base_seed.exists():
+            print(f"[bold green]✓ Using base seed: {base_seed}[/bold green]")
+            current_seed = read_bytes(base_seed)
+        else:
+            print(f"[yellow]Warning: No seed or base.tar found, creating minimal seed[/yellow]")
+            current_seed = b"\x00" * 512  # Minimal TAR block
+    elif isinstance(seed_path, str):
         seed_path = Path(seed_path)
-    
-    # Load seed
-    if not seed_path.exists():
-        print(f"[yellow]Warning: Seed not found at {seed_path}, creating empty seed[/yellow]")
-        write_bytes(seed_path, b"\x00")
-    
-    current_seed = read_bytes(seed_path)
+        if seed_path.exists():
+            print(f"[bold green]✓ Loading seed from: {seed_path}[/bold green]")
+            current_seed = read_bytes(seed_path)
+        else:
+            print(f"[bold red]✗ Seed not found: {seed_path}[/bold red]")
+            raise FileNotFoundError(f"Seed file not found: {seed_path}")
+    else:
+        # seed_path is already a Path object
+        if seed_path.exists():
+            print(f"[bold green]✓ Loading seed from: {seed_path}[/bold green]")
+            current_seed = read_bytes(seed_path)
+        else:
+            print(f"[bold red]✗ Seed not found: {seed_path}[/bold red]")
+            raise FileNotFoundError(f"Seed file not found: {seed_path}")
     
     # Setup Jinja2 templates
     templates_dir = Path(__file__).parent.parent / "prompt_templates"
@@ -239,7 +286,8 @@ def run_pipeline(
                 new_seed = current_seed
         
         # Save new seed
-        seed_file = iter_dir / "seed.bin"
+        seed_filename = f"mutated_seed_it{iteration:02d}.bin"
+        seed_file = iter_dir / seed_filename
         write_bytes(seed_file, new_seed)
         current_seed = new_seed
         

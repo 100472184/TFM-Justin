@@ -16,6 +16,11 @@ You are proposing seed mutations for vulnerability research.
 - Length: {{ seed_length }} bytes
 - Hex preview: {{ seed_preview }}
 
+**IMPORTANT:**
+- If seed_length < 1024, it may be invalid/incomplete
+- For TAR vulnerabilities, start with valid TAR structure (see context)
+- Mutations should preserve format validity until final truncation
+
 {% if verify_history %}
 **Previous Attempts:**
 {% for result in verify_history %}
