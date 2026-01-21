@@ -5,6 +5,12 @@ from typing import List, Dict
 MAX_SEED_SIZE = 1024 * 1024  # 1MB limit
 
 
+def validate_hex_string(hex_str: str, operation: str) -> None:
+    """Validate hex string has even length before fromhex()."""
+    if len(hex_str) % 2 != 0:
+        raise ValueError(f"Invalid hex in {operation}: {hex_str} (odd length: {len(hex_str)} chars)")
+
+
 def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
     """
     Apply a list of mutation operations to seed bytes.
@@ -25,6 +31,8 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             hex_str = mut.get("hex", "").replace(" ", "")
             if not hex_str:
                 continue
+            if len(hex_str) % 2 != 0:
+                raise ValueError(f"Invalid hex in append_bytes: {hex_str} (odd length: {len(hex_str)} chars)")
             try:
                 new_bytes = bytes.fromhex(hex_str)
                 result.extend(new_bytes)
@@ -45,6 +53,8 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             hex_str = mut.get("hex", "").replace(" ", "")
             if not hex_str:
                 continue
+            if len(hex_str) % 2 != 0:
+                raise ValueError(f"Invalid hex in overwrite_range: {hex_str} (odd length: {len(hex_str)} chars)")
             try:
                 new_bytes = bytes.fromhex(hex_str)
             except ValueError as e:
