@@ -1,0 +1,315 @@
+# LLM-Guided Fuzzing Pipeline - Execution Guide
+
+This directory contains the results of fuzzing pipeline executions. Each run is organized by timestamp, task ID, and iteration.
+
+## Directory Structure
+
+```
+runs/
+├── YYYYMMDD_HHMMSS_<task-id>/
+│   └── <task-id>/
+│       ├── summary.json                      # Overall run summary
+│       ├── iter_001/
+│       │   ├── analysis.json                # LLM's vulnerability analysis
+│       │   ├── generate.json                # Generated mutations
+│       │   ├── verify.json                  # Verification results (vulnerable vs fixed)
+│       │   ├── mutated_seed_it01.bin       # Mutated input file
+│       │   └── command.txt                  # Manual test commands
+│       ├── iter_002/
+│       │   └── ...
+│       └── ...
+```
+
+## How to Run the Pipeline
+
+### Prerequisites
+
+1. **Docker Desktop running** with Docker Compose v2
+2. **Python virtual environment** with dependencies installed:
+   ```bash
+   python -m venv .venv-oh
+   .venv-oh\Scripts\activate  # Windows
+   pip install -r requirements.txt
+   ```
+
+3. **Build Docker images** before first run:
+   ```bash
+   python -m scripts.bench build CVE-2024-57970_libarchive
+   ```
+
+### Clean Start (Recommended)
+
+Always clean Docker state before starting a new pipeline run to prevent stale container issues:
+
+```bash
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes --rmi all
+python -m scripts.bench build CVE-2024-57970_libarchive
+```
+
+### Execute Pipeline by Information Level
+
+The pipeline supports 4 information levels (L0-L3) that control how much context the LLM receives:
+
+**L3 - Full Context (Highest Information)**
+```bash
+python -m agents.openhands_llama3.run --task-id CVE-2024-57970_libarchive --level L3 --max-iters 10
+```
+- Includes complete source code, precise offsets, and detailed mutation strategies
+- Expected performance: 2-4 iterations to find exploit
+
+**L2 - Partial Context**
+```bash
+python -m agents.openhands_llama3.run --task-id CVE-2024-57970_libarchive --level L2 --max-iters 10
+```
+- Includes source code snippets and general mutation guidance
+- Expected performance: May not find exploit in 10 iterations without specific offsets
+
+**L1 - Description + Patch**
+```bash
+python -m agents.openhands_llama3.run --task-id CVE-2024-57970_libarchive --level L1 --max-iters 10
+```
+- Only CVE description and patch diff
+- Expected performance: Low probability of success
+
+**L0 - Minimal Information**
+```bash
+python -m agents.openhands_llama3.run --task-id CVE-2024-57970_libarchive --level L0 --max-iters 10
+```
+- Only CVE ID and basic metadata
+- Expected performance: Very low probability of success
+
+### Pipeline Execution Flow
+
+For each iteration, the pipeline executes three phases:
+
+1. **ANALYZE**: LLM analyzes vulnerability context and previous results
+2. **GENERATE**: LLM proposes byte-level mutations to apply
+3. **VERIFY**: Tests mutated seed against vulnerable and fixed versions
+4. **CLEANUP**: Automatically cleans Docker containers to prevent stale state
+
+The pipeline stops when:
+- A CVE-specific crash is detected (vulnerable crashes, fixed does not)
+- Maximum iterations reached
+- LLM decides to stop early
+
+## Validating Results
+
+### Automatic Cleanup Between Iterations
+
+**IMPORTANT**: The pipeline now automatically runs `docker compose down --volumes` after each verification to prevent false positives from stale Docker container state. This ensures:
+- Clean container state for every iteration
+- Consistent results between pipeline runs and manual verification
+- No contamination from previous test executions
+
+### Manual Validation of Found Exploits
+
+When the pipeline reports success, always validate manually with clean containers:
+
+```bash
+# 1. Clean Docker state
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+
+# 2. Evaluate the specific seed
+python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<RUN_DIR>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
+```
+
+**Expected output for valid exploit**:
+```
+CVE-2024-57970_libarchive verdict: vuln_crashes=True fixed_crashes=False success=True
+```
+
+**Invalid exploit indicators**:
+- `vuln_crashes=False` - Exploit does not trigger vulnerability
+- `fixed_crashes=True` - Exploit affects fixed version (not CVE-specific)
+- Both exit with "Unrecognized archive format" - Malformed input rejected by parser
+
+### Testing Individual Components
+
+**Run only vulnerable version**:
+```bash
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-vuln --seed <path-to-seed>
+```
+
+**Run only fixed version**:
+```bash
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-fixed --seed <path-to-seed>
+```
+
+## Understanding Results
+
+### Success Criteria
+
+An exploit is considered successful when:
+- ✅ Vulnerable version crashes (exit code 134, 139 or sanitizer output)
+- ✅ Fixed version exits cleanly (exit code 1 or similar error handling)
+- ✅ Differential behavior confirms CVE-specific trigger
+
+### Common Issues
+
+**Issue**: Pipeline reports success but manual validation shows both versions fail
+- **Cause**: Docker containers not cleaned before manual test
+- **Solution**: Always run `docker compose down --volumes` before manual validation
+
+**Issue**: Fixed version crashes in pipeline but not in manual tests
+- **Cause**: Stale Docker container state during pipeline execution (should not happen with new cleanup logic)
+- **Solution**: Re-run pipeline from clean state
+
+**Issue**: Both versions show "Unrecognized archive format"
+- **Cause**: Mutations broke file format structure too severely
+- **Solution**: This is expected for some mutations; LLM learns from feedback
+
+## Interpreting verify.json
+
+Each iteration's `verify.json` contains detailed results:
+
+```json
+{
+  "vuln_exit_code": 139,           // Exit code from vulnerable version
+  "vuln_crashes": true,            // Whether vulnerable version crashed
+  "vuln_stdout": "...",            // Output from vulnerable version
+  "fixed_exit_code": 1,            // Exit code from fixed version
+  "fixed_crashes": false,          // Whether fixed version crashed
+  "fixed_stdout": "...",           // Output from fixed version
+  "success": true,                 // CVE-specific crash detected
+  "notes": "CVE-specific crash",   // Human-readable summary
+  "mutation_applied": true,        // Whether mutations applied successfully
+  "mutation_error": null           // Error during mutation (if any)
+}
+```
+
+### Crash Indicators
+
+**Vulnerable version should show**:
+- Exit code: 134 (SIGABRT), 139 (SIGSEGV), or similar
+- Output containing: "AddressSanitizer", "heap-buffer-overflow", "segmentation fault", etc.
+
+**Fixed version should show**:
+- Exit code: 1 (error handling)
+- Output containing: "Truncated archive detected", "Error opening archive", etc.
+
+## Feedback Loop (Retroalimentación)
+
+The pipeline maintains a feedback history (`verify_history`) that is passed to the LLM in subsequent iterations. This includes:
+
+- **Previous mutations**: Exact operations attempted (truncate, overwrite, etc.)
+- **Results**: Whether vulnerable/fixed versions crashed
+- **Exit codes**: Actual exit codes from both versions
+- **Output previews**: First 500 characters of stderr/stdout
+
+The LLM uses this information to:
+- Avoid repeating failed strategies
+- Refine successful approaches
+- Progressively explore the input space
+
+**Verification that feedback works**:
+1. Check `iter_002/analysis.json` - should reference results from iter_001
+2. Check `iter_003/generate.json` - rationale should mention previous attempts
+3. Compare mutations across iterations - should show learning/refinement
+
+## Comparing Information Levels
+
+To evaluate how information level affects performance:
+
+1. Run pipeline at all levels (L0, L1, L2, L3) with same max_iters
+2. Record for each:
+   - Iterations to first success (if any)
+   - Total successful exploits found
+   - Types of mutations attempted
+3. Expected results:
+   - L3: Fastest to success (has specific offsets)
+   - L2: Slower, needs more exploration
+   - L1: May not succeed in reasonable time
+   - L0: Very unlikely to succeed
+
+## Troubleshooting
+
+**Pipeline hangs or times out**:
+- Check Docker Desktop is running
+- Verify Docker Compose version: `docker compose version` (should be v2.x)
+- Check disk space (Docker images need ~2-4GB)
+
+**LLM not responding**:
+- Verify Ollama is running: `ollama list`
+- Check LLM model is available: `ollama run llama3`
+- Review OpenHands SDK configuration
+
+**False positives/negatives**:
+- Rebuild Docker images: `python -m scripts.bench build CVE-2024-57970_libarchive --no-cache`
+- Clean all Docker state: `docker system prune -a --volumes`
+- Verify base seed exists: `tasks/CVE-2024-57970_libarchive/seeds/base.tar`
+
+## Best Practices
+
+1. **Always clean before validation**: Docker state matters
+2. **Review verify.json**: Don't trust pipeline output alone
+3. **Compare information levels**: Demonstrates research value
+4. **Save successful seeds**: Copy to seeds folder for benchmarking
+5. **Document findings**: Note which offsets/strategies worked
+6. **Monitor resources**: Docker can consume significant disk/memory
+
+## Advanced Usage
+
+### Custom Seed
+
+Use a specific starting seed instead of base.tar:
+
+```bash
+python -m agents.openhands_llama3.run \
+    --task-id CVE-2024-57970_libarchive \
+    --level L3 \
+    --max-iters 10 \
+    --seed /path/to/custom/seed.bin
+```
+
+### Adjust Iterations
+
+Increase for harder CVEs or when exploring with lower information levels:
+
+```bash
+python -m agents.openhands_llama3.run \
+    --task-id CVE-2024-57970_libarchive \
+    --level L1 \
+    --max-iters 50
+```
+
+### Batch Testing
+
+Run multiple levels automatically:
+
+```bash
+for level in L0 L1 L2 L3; do
+    echo "Testing level $level"
+    docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+    python -m agents.openhands_llama3.run \
+        --task-id CVE-2024-57970_libarchive \
+        --level $level \
+        --max-iters 10
+done
+```
+
+## Research Questions
+
+When using this pipeline for research, consider:
+
+1. **Information efficiency**: How does information level affect success rate and iteration count?
+2. **Mutation strategies**: Which types of mutations are most effective for different vulnerability classes?
+3. **Feedback effectiveness**: How much does verify_history improve performance?
+4. **Generalization**: Do strategies learned on one CVE transfer to similar vulnerabilities?
+5. **LLM capabilities**: What is the minimum context needed for the LLM to succeed?
+
+## Contributing Results
+
+When documenting successful exploits:
+
+1. Include the full run directory
+2. Note information level used
+3. Document iterations to success
+4. Describe mutation strategy that worked
+5. Include validated verify.json showing CVE-specific crash
+6. Add analysis of why the exploit works (see SUCCESS_ANALYSIS.md examples)
+
+## References
+
+- Docker Compose documentation: https://docs.docker.com/compose/
+- AddressSanitizer: https://github.com/google/sanitizers
+- libarchive CVE-2024-57970: https://github.com/libarchive/libarchive/security/advisories
