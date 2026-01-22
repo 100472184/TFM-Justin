@@ -42,9 +42,23 @@ runs/
 Always clean Docker state before starting a new pipeline run to prevent stale container issues:
 
 ```bash
+# Complete cleanup
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes --rmi all
+docker system prune -f
+
+# Rebuild from scratch
 python -m scripts.bench build CVE-2024-57970_libarchive
+
+# Verify images are valid (CRITICAL)
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
 ```
+
+**Expected versions**:
+- Vulnerable: `bsdtar 3.7.7 - libarchive 3.7.7`
+- Fixed: `bsdtar 3.7.8 - libarchive 3.7.8`
+
+If either fails, Docker images are corrupted and must be rebuilt.
 
 ### Execute Pipeline by Information Level
 
@@ -106,10 +120,14 @@ The pipeline stops when:
 When the pipeline reports success, always validate manually with clean containers:
 
 ```bash
-# 1. Clean Docker state
+# 1. Clean Docker state (removes stale containers)
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
 
-# 2. Evaluate the specific seed
+# 2. Verify Docker images are still valid
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
+
+# 3. Evaluate the specific seed
 python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<RUN_DIR>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
 ```
 
@@ -118,10 +136,16 @@ python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<RUN_DIR
 CVE-2024-57970_libarchive verdict: vuln_crashes=True fixed_crashes=False success=True
 ```
 
+**CRITICAL**: If manual validation shows different results than verify.json:
+- Docker images may be corrupted
+- Rebuild completely: `docker compose down --volumes --rmi all` then rebuild
+- Verify versions with `--version` commands above
+
 **Invalid exploit indicators**:
 - `vuln_crashes=False` - Exploit does not trigger vulnerability
 - `fixed_crashes=True` - Exploit affects fixed version (not CVE-specific)
 - Both exit with "Unrecognized archive format" - Malformed input rejected by parser
+- Results differ from verify.json - **Docker images are corrupted**
 
 ### Testing Individual Components
 
@@ -223,20 +247,61 @@ To evaluate how information level affects performance:
 
 ## Troubleshooting
 
+### Critical: Verify Docker Images Are Valid
+
+**BEFORE running any pipeline, verify Docker images are correctly built:**
+
+```bash
+# Test vulnerable version responds
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+
+# Test fixed version responds
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
+```
+
+**Expected output**:
+- Vulnerable: Should show `bsdtar 3.7.7 - libarchive 3.7.7` (or similar)
+- Fixed: Should show `bsdtar 3.7.8 - libarchive 3.7.8`
+
+**If either command fails or shows wrong version**:
+```bash
+# Complete rebuild
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes --rmi all
+docker system prune -f
+python -m scripts.bench build CVE-2024-57970_libarchive
+```
+
+**Symptoms of corrupted Docker images**:
+- Pipeline reports success but manual validation fails
+- Vulnerable version doesn't crash when it should
+- Fixed version crashes when it shouldn't
+- `--version` command exits with error or no output
+- Inconsistent results between runs with same seed
+
+### Other Issues
+
 **Pipeline hangs or times out**:
 - Check Docker Desktop is running
 - Verify Docker Compose version: `docker compose version` (should be v2.x)
 - Check disk space (Docker images need ~2-4GB)
+- Try restarting Docker Desktop
 
 **LLM not responding**:
 - Verify Ollama is running: `ollama list`
 - Check LLM model is available: `ollama run llama3`
 - Review OpenHands SDK configuration
+- Check system resources (Ollama needs RAM)
 
-**False positives/negatives**:
-- Rebuild Docker images: `python -m scripts.bench build CVE-2024-57970_libarchive --no-cache`
-- Clean all Docker state: `docker system prune -a --volumes`
-- Verify base seed exists: `tasks/CVE-2024-57970_libarchive/seeds/base.tar`
+**False positives (pipeline says success but manual test fails)**:
+- **Most common cause**: Corrupted Docker images (see above)
+- Stale Docker containers (should not happen with automatic cleanup)
+- Verify images with `--version` test before trusting results
+- Compare verify.json output with manual test output
+
+**False negatives (manual test succeeds but pipeline failed)**:
+- Check if Docker cleanup ran successfully
+- Review verify.json for actual exit codes vs detected crashes
+- Verify mutation was actually applied (check mutation_error field)
 
 ## Best Practices
 
