@@ -26,29 +26,44 @@ You are proposing seed mutations for vulnerability research.
 {% for result in verify_history %}
 Iteration {{ result.iteration }}:
 - Mutations: {{ result.mutations_applied | tojson }}
+- Mutation applied: {{ result.mutation_success }}{% if result.mutation_error %} - ERROR: {{ result.mutation_error }}{% endif %}
+
 - Result: vuln_crashes={{ result.vuln_crashes }}, fixed_crashes={{ result.fixed_crashes }}
 - Success: {{ result.success }} ({{ result.notes }})
-- Mutation applied: {{ result.mutation_success }}
 
 {% endfor %}
 {% endif %}
 
 **Supported Mutation Operations:**
 
-1. **append_bytes**: Add bytes to end
-   {"op": "append_bytes", "hex": "deadbeef"}
+1. **truncate**: Shorten seed to specific length
+   Example: {"op": "truncate", "new_len": 768}
+   Use for: Triggering truncation vulnerabilities, removing trailing data
 
-2. **flip_bit**: Flip single bit
-   {"op": "flip_bit", "offset": 123, "bit": 5}
+2. **overwrite_range**: Replace bytes at specific offset with hex data
+   Example: {"op": "overwrite_range", "offset": 100, "hex": "cafebabe"}
+   CRITICAL: Hex string MUST have EVEN length (2 chars = 1 byte)
+   Valid: "00", "ff", "deadbeef", "cafebabe"
+   INVALID: "0", "abc", "020303030" (odd lengths)
 
-3. **overwrite_range**: Replace bytes at offset
-   {"op": "overwrite_range", "offset": 10, "hex": "cafebabe"}
+3. **flip_bit**: Flip single bit at offset
+   Example: {"op": "flip_bit", "offset": 50, "bit": 7}
+   Use for: Corrupting single bits, toggling flags
 
-4. **truncate**: Shorten seed
-   {"op": "truncate", "new_len": 200}
+4. **append_bytes**: Add bytes to end of seed
+   Example: {"op": "append_bytes", "hex": "deadbeef"}
+   CRITICAL: Hex string MUST have EVEN length
+   Valid: "00", "ff00", "deadbeef"
+   INVALID: "0", "abc", "020303030"
 
-5. **repeat_range**: Repeat bytes
-   {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
+5. **repeat_range**: Duplicate byte sequence
+   Example: {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
+   Use for: Creating large inputs, triggering size-based vulnerabilities
+
+**CRITICAL HEX STRING REQUIREMENTS:**
+Every hex string MUST have an EVEN number of characters:
+- ✅ VALID: "00" (2 chars), "ff" (2 chars), "cafebabe" (8 chars), "deadbeef" (8 chars)
+- ❌ INVALID: "0" (1 char), "abc" (3 chars), "020303030" (9 chars), "fffff" (5 chars)
 
 **Your Task:**
 Propose 1-5 mutations to apply to the current seed. Consider:
@@ -58,10 +73,11 @@ Propose 1-5 mutations to apply to the current seed. Consider:
 - Patterns from previous attempts
 - Use information from the context sections above to identify critical offsets
 
-**Hex String Rules:**
-- MUST have EVEN number of characters (e.g., "deadbeef" = 8 chars)
-- INVALID: "020303030" (9 chars), "abc" (3 chars)
-- VALID: "02030303" (8 chars), "abcd" (4 chars)
+**Common Mutation Strategies:**
+- For truncation bugs: Start with {"op": "truncate", "new_len": <size>}
+- For buffer overflows: Combine truncate with overwrite
+- For header corruption: {"op": "overwrite_range", "offset": 0, "hex": "00"}
+- For size field manipulation: Overwrite size fields in headers
 
 **Output Format (JSON only, no markdown):**
 {

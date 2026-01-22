@@ -388,6 +388,7 @@ def run_pipeline(
             "notes": verify_result["notes"],
             "mutations_applied": mutations if mutations else [],
             "mutation_success": mutation_success,
+            "mutation_error": mutation_error,
             "vuln_stderr_preview": safe_truncate(verify_result["vuln_stdout"], 500),
             "fixed_stderr_preview": safe_truncate(verify_result["fixed_stdout"], 500)
         })
