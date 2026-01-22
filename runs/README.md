@@ -37,6 +37,8 @@ runs/
    python -m scripts.bench build CVE-2024-57970_libarchive
    ```
 
+   **Note**: Images are compiled with AddressSanitizer (ASan) only. UBSan was removed for v3.7.7 compatibility.
+
 ### Clean Start (Recommended)
 
 Always clean Docker state before starting a new pipeline run to prevent stale container issues:
