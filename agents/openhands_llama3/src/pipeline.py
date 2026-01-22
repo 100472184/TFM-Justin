@@ -72,6 +72,43 @@ def detect_success_signal(stdout: str, stderr: str, exit_code: int) -> bool:
     return False
 
 
+def cleanup_docker(repo_root: Path, task_id: str) -> None:
+    """
+    Clean Docker containers and volumes to prevent stale state between iterations.
+    
+    This is critical because Docker containers can cache state that causes
+    inconsistent results between pipeline runs and manual verification.
+    """
+    compose_file = repo_root / "tasks" / task_id / "compose.yml"
+    
+    if not compose_file.exists():
+        print(f"  [yellow]Warning: compose.yml not found at {compose_file}[/yellow]")
+        return
+    
+    try:
+        cmd = [
+            "docker", "compose",
+            "-f", str(compose_file),
+            "down", "--volumes"
+        ]
+        
+        result = subprocess.run(
+            cmd,
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            print(f"  [yellow]Warning: Docker cleanup failed: {result.stderr}[/yellow]")
+    
+    except subprocess.TimeoutExpired:
+        print(f"  [yellow]Warning: Docker cleanup timed out[/yellow]")
+    except Exception as e:
+        print(f"  [yellow]Warning: Docker cleanup error: {e}[/yellow]")
+
+
 def run_benchmark(
     repo_root: Path,
     task_id: str,
@@ -335,6 +372,10 @@ def run_pipeline(
         print(f"  Vulnerable: exit_code={verify_result['vuln_exit_code']}, crashes={verify_result['vuln_crashes']}")
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  [bold]Success: {verify_result['success']}[/bold] - {verify_result['notes']}")
+        
+        # Clean Docker containers after verification to prevent stale state
+        print("  Cleaning Docker containers...")
+        cleanup_docker(repo_root, task_id)
         
         # Add to history with complete information for next iteration
         verify_history.append({

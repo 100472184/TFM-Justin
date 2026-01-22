@@ -56,12 +56,7 @@ Propose 1-5 mutations to apply to the current seed. Consider:
 - Boundary conditions (lengths, offsets, sizes)
 - Invalid values that might trigger bugs
 - Patterns from previous attempts
-
-**CRITICAL for CVE-2024-57970 (libarchive GNU longlink):**
-- The vulnerability is triggered by TRUNCATED TAR files
-- Start with valid 3KB TAR, then truncate progressively
-- Target offsets: 768 (mid-linkname), 637 (half-payload), 761 (before null)
-- Example: {"op": "truncate", "new_len": 768}
+- Use information from the context sections above to identify critical offsets
 
 **Hex String Rules:**
 - MUST have EVEN number of characters (e.g., "deadbeef" = 8 chars)
