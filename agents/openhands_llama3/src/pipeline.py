@@ -145,16 +145,14 @@ def run_benchmark(
     seed_path: Path
 ) -> Dict:
     """
-    Execute benchmark command and capture results.
+    Execute benchmark via subprocess - matches manual testing that works reliably.
     
     Returns dict with:
-    - exit_code: int
+    - exit_code: int (actual binary exit code)
     - stdout: str
     - stderr: str
-    - success_signal: bool
+    - crashes: bool (True if crash detected)
     """
-    # Build command: python -m scripts.bench run <task_id> --service <service> --seed <seed_path>
-    # Use sys.executable to ensure same Python interpreter (with venv dependencies)
     cmd = [
         sys.executable, "-m", "scripts.bench",
         "run", task_id,
@@ -168,41 +166,53 @@ def run_benchmark(
             cwd=str(repo_root),
             capture_output=True,
             text=True,
-            timeout=180  # 3 minute timeout
+            timeout=180
         )
         
-        stdout = result.stdout
-        stderr = result.stderr
-        exit_code = result.returncode
+        full_output = result.stdout + "\n" + result.stderr
         
-        # CRITICAL: Parse the real exit code from stdout
-        # bench.py prints "exit_code=NNN" at the end
-        import re
-        match = re.search(r'exit_code=(\d+)', stdout)
+        # Extract actual exit code from bench.py output
+        exit_code = 0
+        match = re.search(r'exit_code=(\d+)', full_output)
         if match:
-            real_exit_code = int(match.group(1))
-            # Use the real exit code from the binary, not the bench.py wrapper
-            exit_code = real_exit_code
+            exit_code = int(match.group(1))
+        
+        # Detect crashes using multiple signals
+        crashes = False
+        
+        # Signal 1: Crash exit codes
+        if exit_code in [139, 134, 11, 6, -11, -6]:
+            crashes = True
+            print(f"  ✓ Detected crash via exit code: {exit_code}")
+        
+        # Signal 2: Sanitizer reports
+        if re.search(r'AddressSanitizer|UndefinedBehaviorSanitizer|SUMMARY: .*Sanitizer', full_output, re.IGNORECASE):
+            crashes = True
+            print(f"  ✓ Detected sanitizer report")
+        
+        # Signal 3: Crash keywords
+        crash_keywords = [
+            'segmentation fault', 'dumped core', 'core dumped',
+            'SIGSEGV', 'SIGABRT', 'heap-buffer-overflow',
+            'stack-buffer-overflow', 'use-after-free', 'double-free'
+        ]
+        for keyword in crash_keywords:
+            if keyword.lower() in full_output.lower():
+                crashes = True
+                print(f"  ✓ Detected crash keyword: '{keyword}'")
+                break
+        
+        return {
+            "exit_code": exit_code,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "crashes": crashes
+        }
     
     except subprocess.TimeoutExpired:
-        stdout = ""
-        stderr = "TIMEOUT: Command exceeded 180 seconds"
-        exit_code = -1
-    
+        return {"exit_code": -1, "stdout": "", "stderr": "TIMEOUT", "crashes": False}
     except Exception as e:
-        stdout = ""
-        stderr = f"ERROR: {str(e)}"
-        exit_code = -2
-    
-    success_signal = detect_success_signal(stdout, stderr, exit_code)
-    
-    return {
-        "exit_code": exit_code,
-        "stdout": stdout,
-        "stderr": stderr,
-        "success_signal": success_signal,
-        "notes": "Vulnerability triggered" if success_signal else "No crash detected"
-    }
+        return {"exit_code": -2, "stdout": "", "stderr": f"ERROR: {e}", "crashes": False}
 
 
 def run_pipeline(
@@ -229,11 +239,11 @@ def run_pipeline(
     ensure_dir(run_dir)
     
     # Load context
-    print(f"[bold cyan]Loading context for {task_id} at level {level}...[/bold cyan]")
+    print(f"Loading context for {task_id} at level {level}...")
     context = load_task_context(repo_root, task_id, level)
     
     # Initialize LLM client
-    print("[bold cyan]Initializing LLM client...[/bold cyan]")
+    print("Initializing LLM client...")
     llm = OpenHandsLLMClient()
     
     # Convert seed_path to Path if it's a string, or set to None if not provided
@@ -243,7 +253,7 @@ def run_pipeline(
         base_seed = task_seeds_dir / "base.tar"
         
         if base_seed.exists():
-            print(f"[bold green]✓ Using base seed: {base_seed}[/bold green]")
+            print(f"✓ Using base seed: {base_seed}")
             current_seed = read_bytes(base_seed)
         else:
             print(f"[yellow]Warning: No seed or base.tar found, creating minimal seed[/yellow]")
@@ -251,18 +261,18 @@ def run_pipeline(
     elif isinstance(seed_path, str):
         seed_path = Path(seed_path)
         if seed_path.exists():
-            print(f"[bold green]✓ Loading seed from: {seed_path}[/bold green]")
+            print(f"✓ Loading seed from: {seed_path}")
             current_seed = read_bytes(seed_path)
         else:
-            print(f"[bold red]✗ Seed not found: {seed_path}[/bold red]")
+            print(f"✗ Seed not found: {seed_path}")
             raise FileNotFoundError(f"Seed file not found: {seed_path}")
     else:
         # seed_path is already a Path object
         if seed_path.exists():
-            print(f"[bold green]✓ Loading seed from: {seed_path}[/bold green]")
+            print(f"✓ Loading seed from: {seed_path}")
             current_seed = read_bytes(seed_path)
         else:
-            print(f"[bold red]✗ Seed not found: {seed_path}[/bold red]")
+            print(f"✗ Seed not found: {seed_path}")
             raise FileNotFoundError(f"Seed file not found: {seed_path}")
     
     # Setup Jinja2 templates
@@ -275,9 +285,9 @@ def run_pipeline(
     success = False
     
     for iteration in range(1, max_iters + 1):
-        print(f"\n[bold magenta]{'='*60}[/bold magenta]")
-        print(f"[bold magenta]ITERATION {iteration}/{max_iters}[/bold magenta]")
-        print(f"[bold magenta]{'='*60}[/bold magenta]")
+        print(f"\n{'='*60}")
+        print(f"ITERATION {iteration}/{max_iters}")
+        print(f"{'='*60}")
         
         iter_dir = run_dir / f"iter_{iteration:03d}"
         ensure_dir(iter_dir)
@@ -287,7 +297,7 @@ def run_pipeline(
         cleanup_docker(repo_root, task_id)
         
         # ===== PHASE 1: ANALYZE =====
-        print("\n[bold green]→ ANALYZE[/bold green]")
+        print("\n→ ANALYZE")
         
         analyze_template = env.get_template("analyze.j2")
         analyze_prompt = analyze_template.render(
@@ -314,7 +324,7 @@ def run_pipeline(
             break
         
         # ===== PHASE 2: GENERATE =====
-        print("\n[bold green]→ GENERATE[/bold green]")
+        print("\n→ GENERATE")
         
         # Prepare seed preview (hex, truncated)
         seed_hex = current_seed.hex()
@@ -407,29 +417,39 @@ def run_pipeline(
         current_seed = new_seed
         
         # ===== PHASE 3: VERIFY =====
-        print("\n[bold green]→ VERIFY[/bold green]")
+        print("\n→ VERIFY")
         
-        # Test BOTH vulnerable and fixed versions to ensure CVE-specific crash
         print("  Testing vulnerable version...")
         verify_vuln = run_benchmark(repo_root, task_id, service, seed_file)
         
         print("  Testing fixed version...")
         verify_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
         
-        # Combine results
+        # Use 'crashes' field from run_benchmark
+        vuln_crashes = verify_vuln["crashes"]
+        fixed_crashes = verify_fixed["crashes"]
+        success = vuln_crashes and not fixed_crashes
+        
+        if success:
+            notes = "CVE-specific crash"
+        elif vuln_crashes and fixed_crashes:
+            notes = "Both versions crash"
+        elif not vuln_crashes and fixed_crashes:
+            notes = "Only fixed crashes (inverted)"
+        else:
+            notes = "No crash detected"
+        
         verify_result = {
             "vuln_exit_code": verify_vuln["exit_code"],
             "vuln_stdout": verify_vuln["stdout"],
             "vuln_stderr": verify_vuln["stderr"],
-            "vuln_crashes": verify_vuln["success_signal"],
+            "vuln_crashes": vuln_crashes,
             "fixed_exit_code": verify_fixed["exit_code"],
             "fixed_stdout": verify_fixed["stdout"],
             "fixed_stderr": verify_fixed["stderr"],
-            "fixed_crashes": verify_fixed["success_signal"],
-            "success": verify_vuln["success_signal"] and not verify_fixed["success_signal"],
-            "notes": "CVE-specific crash" if (verify_vuln["success_signal"] and not verify_fixed["success_signal"]) else 
-                     "Both versions crash" if (verify_vuln["success_signal"] and verify_fixed["success_signal"]) else
-                     "No crash detected",
+            "fixed_crashes": fixed_crashes,
+            "success": success,
+            "notes": notes,
             "mutation_applied": mutation_success,
             "mutation_error": mutation_error
         }
@@ -444,9 +464,24 @@ def run_pipeline(
         
         print(f"  Vulnerable: exit_code={verify_result['vuln_exit_code']}, crashes={verify_result['vuln_crashes']}")
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
-        print(f"  [bold]Success: {verify_result['success']}[/bold] - {verify_result['notes']}")
+        print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # Clean Docker containers after verification (redundant with pre-iteration cleanup, but safe)
+        # DOUBLE-CHECK: Validate any success claim
+        if verify_result['success']:
+            print("\n  ⚠️  SUCCESS DETECTED - Running validation check...")
+            recheck_vuln = run_benchmark(repo_root, task_id, service, seed_file)
+            recheck_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
+            
+            if recheck_vuln["crashes"] and not recheck_fixed["crashes"]:
+                print("  ✓ VALIDATION PASSED - Crash is reproducible")
+            else:
+                print(f"  ✗ VALIDATION FAILED - Marking as FALSE POSITIVE")
+                print(f"    Original: vuln={vuln_crashes}, fixed={fixed_crashes}")
+                print(f"    Recheck: vuln={recheck_vuln['crashes']}, fixed={recheck_fixed['crashes']}")
+                verify_result['success'] = False
+                verify_result['notes'] = "False positive - not reproducible"
+                write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
+        
         print("  Cleaning Docker containers...")
         cleanup_docker(repo_root, task_id)
         
@@ -468,7 +503,7 @@ def run_pipeline(
         
         # Check success - now based on CVE-specific crash
         if verify_result["success"]:
-            print(f"\n[bold green]🎉 SUCCESS! CVE-specific crash detected in iteration {iteration}[/bold green]")
+            print(f"\n🎉 SUCCESS! CVE-specific crash detected in iteration {iteration}")
             success = True
             break
     
@@ -486,10 +521,10 @@ def run_pipeline(
     
     write_text(run_dir / "summary.json", json.dumps(summary, indent=2))
     
-    print(f"\n[bold cyan]{'='*60}[/bold cyan]")
-    print(f"[bold cyan]Run complete: {run_dir}[/bold cyan]")
-    print(f"[bold cyan]Success: {success}[/bold cyan]")
-    print(f"[bold cyan]{'='*60}[/bold cyan]")
+    print(f"\n{'='*60}")
+    print(f"Run complete: {run_dir}")
+    print(f"Success: {success}")
+    print(f"{'='*60}")
     
     return {
         "success": success,
