@@ -107,14 +107,30 @@ def cleanup_docker(repo_root: Path, task_id: str) -> None:
         
         # Step 2: Force remove any lingering containers
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["docker", "ps", "-aq", "--filter", f"name={task_id}"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
+            container_ids = result.stdout.strip().split('\n')
+            if container_ids and container_ids[0]:
+                for cid in container_ids:
+                    subprocess.run(["docker", "rm", "-f", cid], capture_output=True, timeout=5)
         except Exception:
             pass  # Best effort
+        
+        # Step 3: Force remove the network
+        try:
+            network_name = f"{task_id.replace('_', '-')}_default"
+            subprocess.run(
+                ["docker", "network", "rm", network_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+        except Exception:
+            pass  # Best effort - network may not exist
     
     except subprocess.TimeoutExpired:
         print(f"  [yellow]Warning: Docker cleanup timed out[/yellow]")
