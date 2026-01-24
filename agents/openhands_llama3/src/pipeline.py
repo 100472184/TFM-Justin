@@ -86,10 +86,11 @@ def cleanup_docker(repo_root: Path, task_id: str) -> None:
         return
     
     try:
+        # Step 1: Stop and remove containers with volumes
         cmd = [
             "docker", "compose",
             "-f", str(compose_file),
-            "down", "--volumes"
+            "down", "--volumes", "--remove-orphans"
         ]
         
         result = subprocess.run(
@@ -102,6 +103,18 @@ def cleanup_docker(repo_root: Path, task_id: str) -> None:
         
         if result.returncode != 0:
             print(f"  [yellow]Warning: Docker cleanup failed: {result.stderr}[/yellow]")
+            return
+        
+        # Step 2: Force remove any lingering containers
+        try:
+            subprocess.run(
+                ["docker", "ps", "-aq", "--filter", f"name={task_id}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+        except Exception:
+            pass  # Best effort
     
     except subprocess.TimeoutExpired:
         print(f"  [yellow]Warning: Docker cleanup timed out[/yellow]")
@@ -315,8 +328,11 @@ def run_pipeline(
         mutation_error = None
         
         if not mutations:
-            print("[yellow]  No mutations proposed, using current seed[/yellow]")
+            print("[yellow]  No mutations proposed, skipping VERIFY[/yellow]")
             new_seed = current_seed
+            mutation_error = "No mutations proposed by LLM"
+            # Skip VERIFY phase when no mutations
+            continue
         else:
             try:
                 new_seed = apply_mutations(current_seed, mutations)
@@ -324,10 +340,47 @@ def run_pipeline(
                 mutation_success = True
             except Exception as e:
                 print(f"[red]  Mutation failed: {e}[/red]")
-                new_seed = current_seed
+                print(f"[yellow]  Skipping VERIFY for this iteration[/yellow]")
                 mutation_error = str(e)
+                
+                # Save failed state to JSON for feedback
+                verify_result = {
+                    "vuln_exit_code": None,
+                    "vuln_stdout": "",
+                    "vuln_stderr": "",
+                    "vuln_crashes": False,
+                    "fixed_exit_code": None,
+                    "fixed_stdout": "",
+                    "fixed_stderr": "",
+                    "fixed_crashes": False,
+                    "success": False,
+                    "notes": f"Mutation failed: {mutation_error}",
+                    "mutation_applied": False,
+                    "mutation_error": mutation_error
+                }
+                
+                write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
+                
+                # Add to history so LLM learns from mistake
+                verify_history.append({
+                    "iteration": iteration,
+                    "vuln_crashes": False,
+                    "fixed_crashes": False,
+                    "vuln_exit_code": None,
+                    "fixed_exit_code": None,
+                    "success": False,
+                    "notes": f"Mutation failed: {mutation_error}",
+                    "mutations_applied": mutations,
+                    "mutation_success": False,
+                    "mutation_error": mutation_error,
+                    "vuln_stderr_preview": "",
+                    "fixed_stderr_preview": ""
+                })
+                
+                # Skip VERIFY phase and continue to next iteration
+                continue
         
-        # Save new seed
+        # Save new seed only if mutation succeeded
         seed_filename = f"mutated_seed_it{iteration:02d}.bin"
         seed_file = iter_dir / seed_filename
         write_bytes(seed_file, new_seed)
