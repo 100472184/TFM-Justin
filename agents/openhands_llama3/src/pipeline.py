@@ -1,6 +1,7 @@
 """Main pipeline orchestration for ANALYZE → GENERATE → VERIFY loop."""
 from __future__ import annotations
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -74,10 +75,9 @@ def detect_success_signal(stdout: str, stderr: str, exit_code: int) -> bool:
 
 def cleanup_docker(repo_root: Path, task_id: str) -> None:
     """
-    Clean Docker containers and volumes to prevent stale state between iterations.
+    Clean Docker containers, volumes and networks to prevent stale state.
     
-    This is critical because Docker containers can cache state that causes
-    inconsistent results between pipeline runs and manual verification.
+    All cleanup steps run regardless of earlier failures to ensure maximum cleanup.
     """
     compose_file = repo_root / "tasks" / task_id / "compose.yml"
     
@@ -85,14 +85,11 @@ def cleanup_docker(repo_root: Path, task_id: str) -> None:
         print(f"  [yellow]Warning: compose.yml not found at {compose_file}[/yellow]")
         return
     
+    # Step 1: Bring down services and remove volumes/orphans
+    # Always attempt this, even if it returns non-zero (common on Windows when nothing is running)
     try:
-        # Step 1: Stop and remove containers with volumes
-        cmd = [
-            "docker", "compose",
-            "-f", str(compose_file),
-            "down", "--volumes", "--remove-orphans"
-        ]
-        
+        cmd = ["docker", "compose", "-f", str(compose_file), 
+               "down", "--volumes", "--remove-orphans"]
         result = subprocess.run(
             cmd,
             cwd=str(repo_root),
@@ -100,42 +97,39 @@ def cleanup_docker(repo_root: Path, task_id: str) -> None:
             text=True,
             timeout=30
         )
-        
         if result.returncode != 0:
-            print(f"  [yellow]Warning: Docker cleanup failed: {result.stderr}[/yellow]")
-            return
-        
-        # Step 2: Force remove any lingering containers
-        try:
-            result = subprocess.run(
-                ["docker", "ps", "-aq", "--filter", f"name={task_id}"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            container_ids = result.stdout.strip().split('\n')
-            if container_ids and container_ids[0]:
-                for cid in container_ids:
-                    subprocess.run(["docker", "rm", "-f", cid], capture_output=True, timeout=5)
-        except Exception:
-            pass  # Best effort
-        
-        # Step 3: Force remove the network
-        try:
-            network_name = f"{task_id.replace('_', '-')}_default"
-            subprocess.run(
-                ["docker", "network", "rm", network_name],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-        except Exception:
-            pass  # Best effort - network may not exist
-    
-    except subprocess.TimeoutExpired:
-        print(f"  [yellow]Warning: Docker cleanup timed out[/yellow]")
+            print(f"  [yellow]Warning: docker compose down returned {result.returncode}: {result.stderr.strip()}[/yellow]")
     except Exception as e:
-        print(f"  [yellow]Warning: Docker cleanup error: {e}[/yellow]")
+        print(f"  [yellow]Warning: docker compose down error: {e}[/yellow]")
+    
+    # Step 2: Force remove any lingering containers whose name contains the task_id
+    try:
+        ps = subprocess.run(
+            ["docker", "ps", "-aq", "--filter", f"name={task_id}"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        for cid in filter(None, ps.stdout.strip().split("\n")):
+            subprocess.run(["docker", "rm", "-f", cid], 
+                         capture_output=True, timeout=5)
+    except Exception as e:
+        print(f"  [yellow]Warning: failed to remove containers: {e}[/yellow]")
+    
+    # Step 3: Remove the Compose network (always lowercase with underscores)
+    # Compose creates networks as <task_id.lower()>_default
+    try:
+        network_name = f"{task_id.lower()}_default"
+        result = subprocess.run(
+            ["docker", "network", "rm", network_name],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0 and "not found" not in result.stderr.lower():
+            print(f"  [yellow]Warning: failed to remove network {network_name}: {result.stderr.strip()}[/yellow]")
+    except Exception as e:
+        print(f"  [yellow]Warning: network removal error: {e}[/yellow]")
 
 
 def run_benchmark(
@@ -166,8 +160,15 @@ def run_benchmark(
             cwd=str(repo_root),
             capture_output=True,
             text=True,
-            timeout=180
+            timeout=180,
+            shell=False
         )
+        
+        # Check if bench.py command itself failed
+        if result.returncode != 0 and "exit_code=" not in result.stdout:
+            # This means bench.py itself failed, not the target binary
+            print(f"  WARNING: bench.py failed with return code {result.returncode}")
+            print(f"  STDERR: {result.stderr[:200]}")
         
         full_output = result.stdout + "\n" + result.stderr
         
@@ -210,8 +211,11 @@ def run_benchmark(
         }
     
     except subprocess.TimeoutExpired:
+        print(f"  ERROR: Timeout after 180s")
         return {"exit_code": -1, "stdout": "", "stderr": "TIMEOUT", "crashes": False}
     except Exception as e:
+        print(f"  ERROR: Exception during benchmark: {e}")
+        print(f"  Command was: {' '.join(cmd)}")
         return {"exit_code": -2, "stdout": "", "stderr": f"ERROR: {e}", "crashes": False}
 
 
