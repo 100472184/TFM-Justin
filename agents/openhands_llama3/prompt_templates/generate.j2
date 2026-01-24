@@ -1,5 +1,12 @@
 You are proposing seed mutations for vulnerability research.
 
+**CRITICAL RULES - READ CAREFULLY:**
+1. Hex strings MUST have EVEN length (each byte = 2 hex chars)
+2. Examples of INVALID hex: "0" (1 char), "abc" (3 chars), "020303030" (9 chars)
+3. Examples of VALID hex: "00" (2 chars), "cafe" (4 chars), "deadbeef" (8 chars)
+4. If you see a previous mutation error about "odd length", DO NOT repeat that hex string
+5. Count the characters in your hex strings before submitting
+
 **IMPORTANT RULES:**
 - Propose small, incremental mutations (1-5 operations per iteration)
 - Focus on triggering crashes/sanitizers, NOT exploitation
@@ -25,11 +32,16 @@ You are proposing seed mutations for vulnerability research.
 **Previous Attempts:**
 {% for result in verify_history %}
 Iteration {{ result.iteration }}:
+{% if result.mutation_error %}
+- ❌ MUTATION ERROR: {{ result.mutation_error }}
+- Mutations proposed: {{ result.mutations_applied | tojson }}
+- THIS MUTATION FAILED - DO NOT REPEAT THE SAME MISTAKE
+{% else %}
 - Mutations: {{ result.mutations_applied | tojson }}
-- Mutation applied: {{ result.mutation_success }}{% if result.mutation_error %} - ERROR: {{ result.mutation_error }}{% endif %}
-
+- Mutation applied: {{ result.mutation_success }}
 - Result: vuln_crashes={{ result.vuln_crashes }}, fixed_crashes={{ result.fixed_crashes }}
 - Success: {{ result.success }} ({{ result.notes }})
+{% endif %}
 
 {% endfor %}
 {% endif %}
@@ -64,6 +76,14 @@ Iteration {{ result.iteration }}:
 Every hex string MUST have an EVEN number of characters:
 - ✅ VALID: "00" (2 chars), "ff" (2 chars), "cafebabe" (8 chars), "deadbeef" (8 chars)
 - ❌ INVALID: "0" (1 char), "abc" (3 chars), "020303030" (9 chars), "fffff" (5 chars)
+
+**HOW TO FIX COMMON ERROR:**
+- Wrong: "020303030" (9 chars) → Right: "02030303" (8 chars) or "0203030300" (10 chars)
+- Wrong: "abc" (3 chars) → Right: "ab" (2 chars) or "abcd" (4 chars)
+- Wrong: "0" (1 char) → Right: "00" (2 chars)
+
+**BEFORE SUBMITTING, COUNT YOUR HEX CHARACTERS:**
+- If odd number of chars → ADD or REMOVE one character to make it even
 
 **Your Task:**
 Propose 1-5 mutations to apply to the current seed. Consider:
