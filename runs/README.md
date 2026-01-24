@@ -44,9 +44,9 @@ runs/
 Always clean Docker state before starting a new pipeline run to prevent stale container issues:
 
 ```bash
-# Complete cleanup
+# Complete cleanup (CRITICAL: Always use --rmi all to remove images)
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes --rmi all
-docker system prune -f
+docker system prune -af --volumes
 
 # Rebuild from scratch
 python -m scripts.bench build CVE-2024-57970_libarchive
@@ -54,6 +54,10 @@ python -m scripts.bench build CVE-2024-57970_libarchive
 # Verify images are valid (CRITICAL)
 docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
 docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
+
+# Test with known seed to confirm differential behavior
+python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\base.tar"
+# Expected: vuln_crashes=True fixed_crashes=False success=True
 ```
 
 **Expected versions**:
