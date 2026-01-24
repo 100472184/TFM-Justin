@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import argparse
+import subprocess
+import uuid
 from pathlib import Path
 from rich import print
 from scripts.lib.utils import repo_root, die
@@ -28,16 +30,67 @@ def cmd_build(args: argparse.Namespace) -> None:
     print(f"[green]Built[/green] {args.task_id}")
 
 def _run_service(tdir: Path, service: str, seed: Path) -> RunResult:
-    # Mount seed into /input/seed.bin
-    out = docker_compose(
-        tdir,
-        [
-            "run", "--rm",
-            "-v", f"{seed.resolve()}:/input/seed.bin:ro",
-            service
-        ],
-    )
-    return RunResult(exit_code=out.exit_code, stdout=out.stdout, stderr=out.stderr)
+    """
+    Run a service container and capture its actual exit code.
+    
+    Uses detached mode + docker wait to get the container's real exit code,
+    not docker compose's exit code (which is always 0 unless Compose itself fails).
+    """
+    try:
+        # Start container in detached mode - compose returns container ID
+        compose_result = subprocess.run(
+            ["docker", "compose", "-f", str(tdir / "compose.yml"), 
+             "run", "-d",
+             "-v", f"{seed.resolve()}:/input/seed.bin:ro",
+             service],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        # Get container ID from stdout
+        container_id = compose_result.stdout.strip()
+        if not container_id or compose_result.returncode != 0:
+            # Failed to start
+            return RunResult(
+                exit_code=compose_result.returncode,
+                stdout=compose_result.stdout,
+                stderr=compose_result.stderr
+            )
+        
+        # Wait for container to finish and get its exit code
+        wait_result = subprocess.run(
+            ["docker", "wait", container_id],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60
+        )
+        exit_code = int(wait_result.stdout.strip() or "0")
+        
+        # Get container logs
+        logs_result = subprocess.run(
+            ["docker", "logs", container_id],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30
+        )
+        
+        stdout = logs_result.stdout
+        stderr = logs_result.stderr
+        
+    finally:
+        # Always remove the container (if it was created)
+        if 'container_id' in locals() and container_id:
+            subprocess.run(
+                ["docker", "rm", "-f", container_id],
+                capture_output=True,
+                check=False,
+                timeout=10
+            )
+    
+    return RunResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
 def cmd_run(args: argparse.Namespace) -> None:
     tdir = tasks_root() / args.task_id
