@@ -57,7 +57,11 @@ docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-ta
 
 # Test with known seed to confirm differential behavior
 python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\base.tar"
-# Expected: vuln_crashes=True fixed_crashes=False success=True
+# Expected: vuln_crashes=False fixed_crashes=False success=False (valid TAR, no crash)
+
+# Test with truncated seed to confirm vulnerability detection
+python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\base_truncated.tar"
+# Expected: vuln_crashes=True fixed_crashes=False success=True (exploit works)
 ```
 
 **Expected versions**:
