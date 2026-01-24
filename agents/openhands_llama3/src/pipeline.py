@@ -282,6 +282,10 @@ def run_pipeline(
         iter_dir = run_dir / f"iter_{iteration:03d}"
         ensure_dir(iter_dir)
         
+        # Clean Docker state BEFORE starting iteration to prevent corruption
+        print("\n  Cleaning Docker state before iteration...")
+        cleanup_docker(repo_root, task_id)
+        
         # ===== PHASE 1: ANALYZE =====
         print("\n[bold green]→ ANALYZE[/bold green]")
         
@@ -442,7 +446,7 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  [bold]Success: {verify_result['success']}[/bold] - {verify_result['notes']}")
         
-        # Clean Docker containers after verification to prevent stale state
+        # Clean Docker containers after verification (redundant with pre-iteration cleanup, but safe)
         print("  Cleaning Docker containers...")
         cleanup_docker(repo_root, task_id)
         
