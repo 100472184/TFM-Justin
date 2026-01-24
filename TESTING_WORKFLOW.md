@@ -29,7 +29,7 @@ python -m agents.openhands_llama3.run --task-id CVE-2024-57970_libarchive --leve
 # If success reported, note the iteration number (e.g., iter_007)
 ```
 
-### 3. Manual Verification (if crash detected)
+### 3. Manual Verification (RECOMMENDED - Individual Commands)
 
 ```powershell
 # CRITICAL: Clean Docker state before manual test
@@ -51,7 +51,59 @@ python -m scripts.bench run CVE-2024-57970_libarchive --service target-fixed --s
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
 ```
 
-### 4. Run Evaluate Command
+**Why individual commands are better:**
+- ✅ Full cleanup between vuln and fixed tests
+- ✅ No state accumulation within single evaluate call
+- ✅ More reliable crash detection
+- ✅ Matches pipeline's double-check behavior
+
+### 4. Alternative: Run Evaluate Command (Less Reliable)
+
+```powershell
+# CRITICAL: Clean Docker state before manual test
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+docker network ls | Select-String "cve-2024"  # Should show NOTHING
+
+# Test vulnerable version manually
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-vuln --seed "runs\<TIMESTAMP>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
+# Expected if valid exploit: exit_code=139 or ASan output
+
+# Clean again before testing fixed version
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+
+# Test fixed version
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-fixed --seed "runs\<TIMESTAMP>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
+# Expected: exit_code=0 or exit_code=1 (no crash)
+
+# Clean after manual tests
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+```
+
+### 4. Alternative: Run Evaluate Command (Less Reliable)
+
+```powershell
+# Note: evaluate runs both versions in sequence without intermediate cleanup
+# Individual commands (section 3) are MORE RELIABLE
+
+# CRITICAL: Clean Docker state before evaluate
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+docker network ls | Select-String "cve-2024"  # Should show NOTHING
+
+# Run evaluate (tests both versions in sequence)
+python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<TIMESTAMP>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
+# Expected if valid: vuln_crashes=True fixed_crashes=False success=True
+
+# Clean after evaluate
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+```
+
+**Limitations of evaluate:**
+- ❌ Runs both versions without cleanup in between
+- ❌ State from vuln test can affect fixed test
+- ❌ Less reliable than individual commands
+- ⚠️ Only use for quick checks, prefer individual commands for validation
+
+### 5. Verify Consistency (Run Multiple Times with Individual Commands)
 
 ```powershell
 # CRITICAL: Clean Docker state before evaluate
@@ -66,26 +118,33 @@ python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<TIMESTA
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
 ```
 
-### 5. Verify Consistency (Run Multiple Times)
+### 5. Verify Consistency (Run Multiple Times with Individual Commands)
 
 ```powershell
-# Clean before each run
+# Test 1
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-vuln --seed "runs\<TIMESTAMP>\...\mutated_seed_itXX.bin"
+# Note exit_code
 
-# Run 1
-python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<TIMESTAMP>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
-
-# Clean
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-fixed --seed "runs\<TIMESTAMP>\...\mutated_seed_itXX.bin"
+# Note exit_code
 
-# Run 2
-python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<TIMESTAMP>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
-
-# Clean
+# Test 2
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-vuln --seed "runs\<TIMESTAMP>\...\mutated_seed_itXX.bin"
+# Should get SAME exit_code as Test 1
 
-# Run 3
-python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<TIMESTAMP>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-fixed --seed "runs\<TIMESTAMP>\...\mutated_seed_itXX.bin"
+# Should get SAME exit_code as Test 1
+
+# Test 3
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-vuln --seed "runs\<TIMESTAMP>\...\mutated_seed_itXX.bin"
+
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-fixed --seed "runs\<TIMESTAMP>\...\mutated_seed_itXX.bin"
 
 # All three runs should give IDENTICAL results
 ```
@@ -107,12 +166,32 @@ docker network ls | Select-String "cve-2024"
 docker network rm cve-2024-57970_libarchive_default
 ```
 
-### Test Known Exploit (base_truncated.tar)
+### Test Known Exploit (base_truncated.tar) - Individual Commands
 ```powershell
 # Clean first
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
 
-# Test
+# Test vuln
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-vuln --seed "tasks\CVE-2024-57970_libarchive\seeds\base_truncated.tar"
+# Expected: exit_code=139
+
+# Clean
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+
+# Test fixed
+python -m scripts.bench run CVE-2024-57970_libarchive --service target-fixed --seed "tasks\CVE-2024-57970_libarchive\seeds\base_truncated.tar"
+# Expected: exit_code=0
+
+# Clean after
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+```
+
+### Test with Evaluate (Quick Check Only)
+```powershell
+# Clean first
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+
+# Test (less reliable than individual commands)
 python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\base_truncated.tar"
 # Expected: vuln_crashes=True fixed_crashes=False success=True
 
@@ -122,20 +201,35 @@ docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
 
 ## Common Mistakes to AVOID
 
+❌ **Using evaluate instead of individual commands:**
+```powershell
+# LESS RELIABLE - no cleanup between vuln and fixed tests
+python -m scripts.bench evaluate ...
+```
+
+✅ **Correct - use individual commands with cleanup:**
+```powershell
+# MORE RELIABLE - cleanup between each test
+docker compose down --volumes
+python -m scripts.bench run ... --service target-vuln --seed ...
+docker compose down --volumes
+python -m scripts.bench run ... --service target-fixed --seed ...
+```
+
 ❌ **Running tests back-to-back without cleanup:**
 ```powershell
 # WRONG - will give inconsistent results
-python -m scripts.bench evaluate ... 
-python -m scripts.bench evaluate ...  # Different result!
+python -m scripts.bench run ... --service target-vuln ...
+python -m scripts.bench run ... --service target-fixed ...  # State from vuln affects this!
 ```
 
 ✅ **Correct - clean between each test:**
 ```powershell
 # RIGHT - consistent results
-docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
-python -m scripts.bench evaluate ...
-docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
-python -m scripts.bench evaluate ...  # Same result
+docker compose down --volumes
+python -m scripts.bench run ... --service target-vuln ...
+docker compose down --volumes
+python -m scripts.bench run ... --service target-fixed ...  # Clean state
 ```
 
 ❌ **Forgetting to check network removal:**
@@ -150,33 +244,43 @@ docker compose down --volumes
 docker network ls | Select-String "cve-2024"  # Should be empty
 ```
 
-## Automated Test Script
+## Automated Test Script (Individual Commands)
 
 Save this as `test_seed.ps1`:
 
 ```powershell
 param(
     [Parameter(Mandatory=$true)]
-    [string]$SeedPath
+    [string]$SeedPath,
+    [Parameter(Mandatory=$false)]
+    [string]$TaskId = "CVE-2024-57970_libarchive"
 )
 
-$taskPath = "tasks/CVE-2024-57970_libarchive/compose.yml"
+$taskPath = "tasks/$TaskId/compose.yml"
 
-Write-Host "`n=== Test 1 ===" -ForegroundColor Cyan
-docker compose -f $taskPath down --volumes | Out-Null
-python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed $SeedPath
+function Test-Seed {
+    param([int]$TestNum)
+    
+    Write-Host "`n=== Test $TestNum - Vulnerable ===" -ForegroundColor Cyan
+    docker compose -f $taskPath down --volumes | Out-Null
+    $vuln = python -m scripts.bench run $TaskId --service target-vuln --seed $SeedPath
+    Write-Host $vuln
+    
+    Write-Host "`n=== Test $TestNum - Fixed ===" -ForegroundColor Green  
+    docker compose -f $taskPath down --volumes | Out-Null
+    $fixed = python -m scripts.bench run $TaskId --service target-fixed --seed $SeedPath
+    Write-Host $fixed
+}
 
-Write-Host "`n=== Test 2 ===" -ForegroundColor Cyan
-docker compose -f $taskPath down --volumes | Out-Null
-python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed $SeedPath
-
-Write-Host "`n=== Test 3 ===" -ForegroundColor Cyan
-docker compose -f $taskPath down --volumes | Out-Null
-python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed $SeedPath
+# Run 3 tests
+Test-Seed -TestNum 1
+Test-Seed -TestNum 2
+Test-Seed -TestNum 3
 
 # Final cleanup
 docker compose -f $taskPath down --volumes | Out-Null
-Write-Host "`nAll three tests should show IDENTICAL results" -ForegroundColor Yellow
+Write-Host "`nAll tests should show IDENTICAL exit codes" -ForegroundColor Yellow
+Write-Host "Expected for valid exploit: vuln=139, fixed=0 or 1" -ForegroundColor Yellow
 ```
 
 Usage:
@@ -186,13 +290,18 @@ Usage:
 
 ## Why This Workflow is Necessary
 
-1. **Docker Compose doesn't propagate exit codes** - the fixes in bench.py now handle this, but cleanup is still critical
+1. **Individual commands are more reliable than evaluate**
+   - Evaluate runs both versions without intermediate cleanup
+   - State from first test can affect second test
+   - Individual commands with cleanup = deterministic results
 
-2. **Networks persist between runs** - the network `cve-2024-57970_libarchive_default` stays alive and affects subsequent tests
+2. **Docker Compose doesn't propagate exit codes** - the fixes in bench.py now handle this, but cleanup is still critical
 
-3. **Volumes can cache state** - `--volumes` flag removes persistent data
+3. **Networks persist between runs** - the network `cve-2024-57970_libarchive_default` stays alive and affects subsequent tests
 
-4. **False positives come from stale state** - cleaning between tests prevents this
+4. **Volumes can cache state** - `--volumes` flag removes persistent data
+
+5. **False positives come from stale state** - cleaning between tests prevents this
 
 ## Expected Behavior After Fixes
 
@@ -201,3 +310,5 @@ Usage:
 ✅ Pipeline verify.json → Matches manual validation
 ✅ No persistent networks between tests
 ✅ Exit codes correctly propagated from container
+✅ Individual commands more reliable than evaluate
+✅ Double-check in pipeline uses individual commands with cleanup

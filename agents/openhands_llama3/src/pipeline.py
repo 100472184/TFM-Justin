@@ -423,8 +423,16 @@ def run_pipeline(
         # ===== PHASE 3: VERIFY =====
         print("\n→ VERIFY")
         
+        # Clean before testing vulnerable version
+        print("  Cleaning Docker state before vuln test...")
+        cleanup_docker(repo_root, task_id)
+        
         print("  Testing vulnerable version...")
         verify_vuln = run_benchmark(repo_root, task_id, service, seed_file)
+        
+        # Clean before testing fixed version
+        print("  Cleaning Docker state before fixed test...")
+        cleanup_docker(repo_root, task_id)
         
         print("  Testing fixed version...")
         verify_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
@@ -470,10 +478,24 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # DOUBLE-CHECK: Validate any success claim
+        # DOUBLE-CHECK: Validate any success claim with individual commands
         if verify_result['success']:
-            print("\n  ⚠️  SUCCESS DETECTED - Running validation check...")
+            print("\n  ⚠️  SUCCESS DETECTED - Running validation check with individual commands...")
+            
+            # Clean Docker state before first validation run
+            print("  Cleaning Docker state before vuln recheck...")
+            cleanup_docker(repo_root, task_id)
+            
+            # Recheck vulnerable version
+            print("  Validating vulnerable version crashes...")
             recheck_vuln = run_benchmark(repo_root, task_id, service, seed_file)
+            
+            # Clean Docker state before fixed version
+            print("  Cleaning Docker state before fixed recheck...")
+            cleanup_docker(repo_root, task_id)
+            
+            # Recheck fixed version
+            print("  Validating fixed version doesn't crash...")
             recheck_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
             
             if recheck_vuln["crashes"] and not recheck_fixed["crashes"]:
