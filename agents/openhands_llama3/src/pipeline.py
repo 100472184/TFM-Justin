@@ -11,7 +11,6 @@ from jinja2 import Environment, FileSystemLoader
 # Import oracle for crash detection
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from scripts.lib.oracle import RunResult, verdict, looks_like_sanitizer_crash
-from scripts.lib.docker import docker_compose_down
 
 from .io_utils import (
     read_bytes, write_bytes, write_text, ensure_dir,
@@ -520,37 +519,59 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # DOUBLE-CHECK: Validate any success claim with individual commands
+        # DOUBLE-CHECK: Validate any success claim with triple voting
+        # Due to non-deterministic ASan behavior, run each test 3 times and use majority vote
         if verify_result['success']:
-            print("\n  ⚠️  SUCCESS DETECTED - Running validation check...")
+            print("\n  ⚠️  SUCCESS DETECTED - Running triple validation (majority voting)...")
             
-            # Clean Docker state before first validation run
-            print("  Cleaning Docker state before vuln recheck...")
-            cleanup_docker(repo_root, task_id)
+            vuln_votes = []
+            fixed_votes = []
             
-            # Recheck vulnerable version
-            print("  Validating vulnerable version crashes...")
-            recheck_vuln = run_benchmark(repo_root, task_id, service, seed_file)
+            # Run 3 independent tests for each version
+            for attempt in range(1, 4):
+                print(f"\n  Validation attempt {attempt}/3:")
+                
+                # Test vulnerable version
+                print(f"    Cleaning Docker state...")
+                cleanup_docker(repo_root, task_id)
+                print(f"    Testing vulnerable version...")
+                recheck_vuln = run_benchmark(repo_root, task_id, service, seed_file)
+                vuln_crashes_now = looks_like_sanitizer_crash(recheck_vuln)
+                vuln_votes.append(vuln_crashes_now)
+                print(f"    Vuln result: {'CRASH' if vuln_crashes_now else 'no crash'} (exit_code={recheck_vuln.exit_code})")
+                
+                # Test fixed version
+                print(f"    Cleaning Docker state...")
+                cleanup_docker(repo_root, task_id)
+                print(f"    Testing fixed version...")
+                recheck_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
+                fixed_crashes_now = looks_like_sanitizer_crash(recheck_fixed)
+                fixed_votes.append(fixed_crashes_now)
+                print(f"    Fixed result: {'CRASH' if fixed_crashes_now else 'no crash'} (exit_code={recheck_fixed.exit_code})")
             
-            # Clean Docker state before fixed version
-            print("  Cleaning Docker state before fixed recheck...")
-            cleanup_docker(repo_root, task_id)
+            # Count votes (majority wins)
+            vuln_crash_votes = sum(vuln_votes)
+            fixed_crash_votes = sum(fixed_votes)
             
-            # Recheck fixed version
-            print("  Validating fixed version doesn't crash...")
-            recheck_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
+            # Need at least 2/3 votes for crash
+            vuln_final = vuln_crash_votes >= 2
+            fixed_final = fixed_crash_votes >= 2
             
-            # Use oracle for recheck verdict
-            recheck_ver = verdict(recheck_vuln, recheck_fixed)
+            print(f"\n  Voting results:")
+            print(f"    Vuln: {vuln_crash_votes}/3 crashes → {'CRASHES' if vuln_final else 'no crash'}")
+            print(f"    Fixed: {fixed_crash_votes}/3 crashes → {'CRASHES' if fixed_final else 'no crash'}")
             
-            if recheck_ver.success:
-                print("  ✓ VALIDATION PASSED - Crash is reproducible")
+            # Validate with majority vote
+            recheck_ver_success = vuln_final and not fixed_final
+            
+            if recheck_ver_success:
+                print("  ✓ VALIDATION PASSED - Crash is reproducible (majority vote)")
             else:
                 print(f"  ✗ VALIDATION FAILED - Marking as FALSE POSITIVE")
                 print(f"    Original: vuln={vuln_crashes}, fixed={fixed_crashes}")
-                print(f"    Recheck: vuln={recheck_ver.vuln_crashes}, fixed={recheck_ver.fixed_crashes}")
+                print(f"    Recheck: vuln={vuln_final}, fixed={fixed_final}")
                 verify_result['success'] = False
-                verify_result['notes'] = "False positive - not reproducible"
+                verify_result['notes'] = f"False positive - validation failed (vuln votes: {vuln_crash_votes}/3, fixed votes: {fixed_crash_votes}/3)"
                 write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
         
         print("  Cleaning Docker containers...")
