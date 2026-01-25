@@ -107,7 +107,7 @@ Press Ctrl+C now to cancel, or Enter to continue...
     print("  This may take 2-5 attempts per image (sometimes more)...")
     print("  Will retry until both images respond (Ctrl+C to cancel)\n")
     
-    # Verify vulnerable image with infinite retry
+    # Verify vulnerable image with infinite retry (NO TIMEOUT - let command finish naturally)
     vuln_image = f"{TASK_ID}-target-vuln"
     vuln_cmd = ["docker", "run", "--rm", "--entrypoint", "/opt/target/bin/bsdtar", vuln_image, "--version"]
     
@@ -116,30 +116,30 @@ Press Ctrl+C now to cancel, or Enter to continue...
     vuln_version = None
     while vuln_version is None:
         try:
+            start_time = time.time()
+            # NO TIMEOUT - let Docker finish naturally (takes ~0.8-1s per attempt)
             result = subprocess.run(
                 vuln_cmd,
                 capture_output=True,
                 text=True,
-                timeout=10,
                 check=False
             )
+            elapsed = time.time() - start_time
+            
             if result.stdout.strip():
                 vuln_version = result.stdout.strip()
-                print(f"    ✓ Attempt {vuln_attempt}: SUCCESS")
+                print(f"    ✓ Attempt {vuln_attempt}: SUCCESS after {elapsed:.2f}s")
                 print(f"      {vuln_version.split()[0:3]}")
             else:
-                print(f"    ○ Attempt {vuln_attempt}: (no output, retrying...)")
-                time.sleep(1.0)
+                print(f"    ○ Attempt {vuln_attempt}: No output after {elapsed:.2f}s")
+                print(f"      Waiting 2 seconds before retry...")
+                time.sleep(2.0)
                 vuln_attempt += 1
-        except subprocess.TimeoutExpired:
-            print(f"    ○ Attempt {vuln_attempt}: (timeout, retrying...)")
-            time.sleep(1.0)
-            vuln_attempt += 1
         except KeyboardInterrupt:
             print("\n\nCancelled by user")
             sys.exit(1)
     
-    # Verify fixed image with infinite retry
+    # Verify fixed image with infinite retry (NO TIMEOUT - let command finish naturally)
     fixed_image = f"{TASK_ID}-target-fixed"
     fixed_cmd = ["docker", "run", "--rm", "--entrypoint", "/opt/target/bin/bsdtar", fixed_image, "--version"]
     
@@ -148,25 +148,25 @@ Press Ctrl+C now to cancel, or Enter to continue...
     fixed_version = None
     while fixed_version is None:
         try:
+            start_time = time.time()
+            # NO TIMEOUT - let Docker finish naturally (takes ~0.8-1s per attempt)
             result = subprocess.run(
                 fixed_cmd,
                 capture_output=True,
                 text=True,
-                timeout=10,
                 check=False
             )
+            elapsed = time.time() - start_time
+            
             if result.stdout.strip():
                 fixed_version = result.stdout.strip()
-                print(f"    ✓ Attempt {fixed_attempt}: SUCCESS")
+                print(f"    ✓ Attempt {fixed_attempt}: SUCCESS after {elapsed:.2f}s")
                 print(f"      {fixed_version.split()[0:3]}")
             else:
-                print(f"    ○ Attempt {fixed_attempt}: (no output, retrying...)")
-                time.sleep(1.0)
+                print(f"    ○ Attempt {fixed_attempt}: No output after {elapsed:.2f}s")
+                print(f"      Waiting 2 seconds before retry...")
+                time.sleep(2.0)
                 fixed_attempt += 1
-        except subprocess.TimeoutExpired:
-            print(f"    ○ Attempt {fixed_attempt}: (timeout, retrying...)")
-            time.sleep(1.0)
-            fixed_attempt += 1
         except KeyboardInterrupt:
             print("\n\nCancelled by user")
             sys.exit(1)
