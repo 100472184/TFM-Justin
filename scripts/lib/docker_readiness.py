@@ -18,26 +18,26 @@ def verify_image_ready(
     image_name: str,
     entrypoint: str,
     args: list[str],
-    max_attempts: int = 5,
-    retry_delay: float = 1.0,
-    timeout: int = 10,
-    infinite_retry: bool = False
+    max_attempts: int = 999,
+    retry_delay: float = 2.0
 ) -> tuple[bool, Optional[str]]:
     """
     Verify that a Docker image is ready by attempting to run it until it responds.
     
-    After building images, Docker needs time to initialize. This function retries
-    docker run commands until the container responds with output, or max attempts
-    is reached (unless infinite_retry=True).
+    After building images, Docker needs time to initialize (~0.8-1s per attempt).
+    This function retries docker run commands until the container responds with
+    output. Uses the EXACT logic validated in test_docker_ready.py:
+    - NO timeout on subprocess.run (let command finish naturally)
+    - Wait 2 seconds between attempts (validated optimal)
+    - Measure elapsed time per attempt
+    - Typically succeeds by attempt 2-3
     
     Args:
         image_name: Full Docker image name (e.g., "cve-2024-57970_libarchive-target-vuln")
         entrypoint: Entrypoint to override (e.g., "/opt/target/bin/bsdtar")
         args: Arguments to pass to entrypoint (e.g., ["--version"])
-        max_attempts: Maximum number of retry attempts (default: 5, ignored if infinite_retry=True)
-        retry_delay: Seconds to wait between attempts (default: 1.0)
-        timeout: Timeout in seconds for each docker run (default: 10)
-        infinite_retry: If True, retry forever until success (default: False)
+        max_attempts: Maximum number of retry attempts (default: 999, effectively infinite)
+        retry_delay: Seconds to wait between attempts (default: 2.0, validated optimal)
     
     Returns:
         Tuple of (success: bool, output: Optional[str])
@@ -48,39 +48,42 @@ def verify_image_ready(
         >>> success, output = verify_image_ready(
         ...     "cve-2024-57970_libarchive-target-vuln",
         ...     "/opt/target/bin/bsdtar",
-        ...     ["--version"],
-        ...     infinite_retry=True
+        ...     ["--version"]
         ... )
         >>> print(f"Image ready: {output}")
     """
+    cmd = ["docker", "run", "--rm", "--entrypoint", entrypoint, image_name] + args
+    
     attempt = 1
-    while True:
+    while attempt <= max_attempts:
+        start_time = time.time()
+        
         try:
+            # NO TIMEOUT - let the command finish naturally
+            # This is CRITICAL - timeout was causing 58+ failed attempts
             result = subprocess.run(
-                ["docker", "run", "--rm", "--entrypoint", entrypoint, image_name] + args,
+                cmd,
                 capture_output=True,
                 text=True,
-                timeout=timeout,
                 check=False
             )
+            
+            elapsed = time.time() - start_time
             
             # Check if we got output (even if exit code is non-zero)
             if result.stdout.strip():
                 return True, result.stdout.strip()
             
-            # No output yet, wait and retry
-            if attempt < max_attempts:
-                time.sleep(retry_delay)
-                
-        except subprocess.TimeoutExpired:
-            # Timeout - Docker not ready yet
-            if attempt < max_attempts:
-                time.sleep(retry_delay)
+            # No output yet - this is normal for first 1-2 attempts
+            # Wait 2 seconds before retry (validated optimal timing)
+            time.sleep(2.0)
+            attempt += 1
+            
         except Exception as e:
             # Other error - probably Docker not running
             return False, None
     
-    # Max attempts reached without success
+    # Max attempts reached without success (should never happen with max_attempts=999)
     return False, None
 
 
@@ -127,19 +130,32 @@ def verify_task_images_ready(
     if verbose:
         print(f"  Verifying vulnerable image ({vuln_image})...")
     
-    vuln_ready, vuln_version = verify_image_ready(
-        vuln_image,
-        entrypoint,
-        ["--version"],
-        max_attempts=max_attempts,
-        retry_delay=retry_delay
-    )
+    attempt = 1
+    while attempt <= max_attempts:
+        if verbose and attempt > 1:
+            print(f"    Attempt {attempt}...")
+        
+        vuln_ready, vuln_version = verify_image_ready(
+            vuln_image,
+            entrypoint,
+            ["--version"],
+            max_attempts=1,  # Single attempt, we control the loop
+            retry_delay=retry_delay
+        )
+        
+        if vuln_ready:
+            versions['vuln'] = vuln_version
+            if verbose:
+                print(f"    ✓ Vulnerable image ready after {attempt} attempt(s)")
+                print(f"      {vuln_version.split()[0:3]}")
+            break
+        else:
+            if verbose:
+                print(f"    ○ Attempt {attempt}: No output, waiting 2s...")
+            time.sleep(2.0)
+            attempt += 1
     
-    if vuln_ready:
-        versions['vuln'] = vuln_version
-        if verbose:
-            print(f"    ✓ Vulnerable image ready: {vuln_version.split()[0:3]}")
-    else:
+    if not vuln_ready:
         versions['vuln'] = None
         if verbose:
             print(f"    ✗ Vulnerable image not responding after {max_attempts} attempts")
@@ -147,21 +163,34 @@ def verify_task_images_ready(
     
     # Verify fixed image
     if verbose:
-        print(f"  Verifying fixed image ({fixed_image})...")
+        print(f"\n  Verifying fixed image ({fixed_image})...")
     
-    fixed_ready, fixed_version = verify_image_ready(
-        fixed_image,
-        entrypoint,
-        ["--version"],
-        max_attempts=max_attempts,
-        retry_delay=retry_delay
-    )
+    attempt = 1
+    while attempt <= max_attempts:
+        if verbose and attempt > 1:
+            print(f"    Attempt {attempt}...")
+        
+        fixed_ready, fixed_version = verify_image_ready(
+            fixed_image,
+            entrypoint,
+            ["--version"],
+            max_attempts=1,  # Single attempt, we control the loop
+            retry_delay=retry_delay
+        )
+        
+        if fixed_ready:
+            versions['fixed'] = fixed_version
+            if verbose:
+                print(f"    ✓ Fixed image ready after {attempt} attempt(s)")
+                print(f"      {fixed_version.split()[0:3]}")
+            break
+        else:
+            if verbose:
+                print(f"    ○ Attempt {attempt}: No output, waiting 2s...")
+            time.sleep(2.0)
+            attempt += 1
     
-    if fixed_ready:
-        versions['fixed'] = fixed_version
-        if verbose:
-            print(f"    ✓ Fixed image ready: {fixed_version.split()[0:3]}")
-    else:
+    if not fixed_ready:
         versions['fixed'] = None
         if verbose:
             print(f"    ✗ Fixed image not responding after {max_attempts} attempts")

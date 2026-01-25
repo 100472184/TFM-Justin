@@ -216,7 +216,7 @@ docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
 docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
 
 # Test (less reliable than individual commands)
-python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\base_truncated.tar"
+python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\final_base.tar"
 # Expected: vuln_crashes=True fixed_crashes=False success=True
 
 # Clean after

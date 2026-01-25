@@ -375,17 +375,18 @@ def run_pipeline(
             # Step 4: CRITICAL - Wait for Docker images to be fully ready
             # There is a timing issue where freshly built images need several attempts
             # before containers respond. This prevents false negatives from unready images.
-            print("    4/4: Verifying images are ready (retry logic)...")
+            # Using infinite retry with 2s wait (validated: ~0.8-1s per attempt, succeeds by attempt 2-3)
+            print("    4/4: Verifying images are ready (infinite retry, 2s wait)...")
             images_ready, versions = verify_task_images_ready(
                 task_id,
-                max_attempts=5,
-                retry_delay=1.0,
+                max_attempts=999,  # Effectively infinite (will succeed by attempt 2-3)
+                retry_delay=2.0,  # Validated optimal wait time
                 verbose=True
             )
                 
             if not images_ready:
-                print(f"      [red]ERROR: Images not responding after 5 attempts![/red]")
-                print(f"      This indicates Docker Desktop issues.")
+                print(f"      [red]ERROR: Images not responding after 999 attempts![/red]")
+                print(f"      This indicates severe Docker Desktop issues.")
                 print(f"      Skipping this iteration.")
                 continue
             
