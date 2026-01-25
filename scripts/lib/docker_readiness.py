@@ -117,8 +117,9 @@ def verify_task_images_ready(
         ...     print(f"Fixed: {versions['fixed']}")
     """
     # Construct image names based on task_id convention
-    vuln_image = f"{task_id}-target-vuln"
-    fixed_image = f"{task_id}-target-fixed"
+    # Docker image names MUST be lowercase
+    vuln_image = f"{task_id.lower()}-target-vuln"
+    fixed_image = f"{task_id.lower()}-target-fixed"
     
     # Determine entrypoint based on task (currently hardcoded for libarchive)
     # TODO: Make this configurable per task

@@ -39,10 +39,16 @@ def run_command(cmd: list[str], description: str, check: bool = True) -> subproc
     print(f"{'='*60}")
     print(f"$ {' '.join(cmd)}\n")
     
-    result = subprocess.run(cmd, check=False, text=True)
+    result = subprocess.run(cmd, check=False, text=True, capture_output=True)
+    
+    # Print stdout if present
+    if result.stdout:
+        print(result.stdout)
     
     if check and result.returncode != 0:
         print(f"\n[ERROR] Command failed with exit code {result.returncode}")
+        if result.stderr:
+            print(f"stderr: {result.stderr}")
         sys.exit(1)
     
     return result
@@ -100,73 +106,106 @@ Press Ctrl+C now to cancel, or Enter to continue...
     )
     
     # Step 4: Verify images are ready with INFINITE retry logic
+    # Using EXACT logic from test_docker_ready.py that works in 1-2 attempts
     print(f"\n{'='*60}")
-    print(f"  Step 4: Verifying images are ready (infinite retry)")
+    print(f"  Step 4: Verifying images are ready")
     print(f"{'='*60}\n")
     
-    print("  This may take 2-5 attempts per image (sometimes more)...")
-    print("  Will retry until both images respond (Ctrl+C to cancel)\n")
+    print("  Using validated timing: NO timeout, 2s wait between attempts")
+    print("  Expected: 1-3 attempts per image (~0.8-1s per attempt)\n")
     
-    # Verify vulnerable image with infinite retry (NO TIMEOUT - let command finish naturally)
-    vuln_image = f"{TASK_ID}-target-vuln"
+    # Verify vulnerable image - EXACT logic from test_docker_ready.py
+    # Docker image names must be lowercase
+    vuln_image = f"{TASK_ID.lower()}-target-vuln"
     vuln_cmd = ["docker", "run", "--rm", "--entrypoint", "/opt/target/bin/bsdtar", vuln_image, "--version"]
     
-    print(f"  Checking vulnerable image ({vuln_image})...")
-    vuln_attempt = 1
+    print(f"  Vulnerable image: {vuln_image}")
+    print(f"  Command: {' '.join(vuln_cmd)}\n")
+    
+    attempt = 1
     vuln_version = None
     while vuln_version is None:
+        print(f"    [{time.strftime('%H:%M:%S')}] Attempt {attempt}: Starting command...")
+        start_time = time.time()
+        
         try:
-            start_time = time.time()
-            # NO TIMEOUT - let Docker finish naturally (takes ~0.8-1s per attempt)
+            # NO TIMEOUT - let the command finish naturally
+            # This is CRITICAL - must match test_docker_ready.py exactly
             result = subprocess.run(
                 vuln_cmd,
                 capture_output=True,
                 text=True,
                 check=False
             )
+            
             elapsed = time.time() - start_time
             
+            # Check if we got output
             if result.stdout.strip():
                 vuln_version = result.stdout.strip()
-                print(f"    ✓ Attempt {vuln_attempt}: SUCCESS after {elapsed:.2f}s")
-                print(f"      {vuln_version.split()[0:3]}")
+                print(f"    [{time.strftime('%H:%M:%S')}] Attempt {attempt}: ✓ SUCCESS after {elapsed:.2f}s")
+                print(f"    Output: {vuln_version}")
+                break
             else:
-                print(f"    ○ Attempt {vuln_attempt}: No output after {elapsed:.2f}s")
-                print(f"      Waiting 2 seconds before retry...")
+                print(f"    [{time.strftime('%H:%M:%S')}] Attempt {attempt}: ○ No output after {elapsed:.2f}s")
+                
+                # Show stderr if present
+                if result.stderr.strip():
+                    print(f"      stderr: {result.stderr.strip()[:100]}")
+                
+                # Wait before next attempt
+                print(f"    [{time.strftime('%H:%M:%S')}]   Waiting 2 seconds before next attempt...")
                 time.sleep(2.0)
-                vuln_attempt += 1
+                attempt += 1
+                
         except KeyboardInterrupt:
             print("\n\nCancelled by user")
             sys.exit(1)
     
-    # Verify fixed image with infinite retry (NO TIMEOUT - let command finish naturally)
-    fixed_image = f"{TASK_ID}-target-fixed"
+    # Verify fixed image - EXACT logic from test_docker_ready.py
+    # Docker image names must be lowercase
+    fixed_image = f"{TASK_ID.lower()}-target-fixed"
     fixed_cmd = ["docker", "run", "--rm", "--entrypoint", "/opt/target/bin/bsdtar", fixed_image, "--version"]
     
-    print(f"\n  Checking fixed image ({fixed_image})...")
-    fixed_attempt = 1
+    print(f"\n  Fixed image: {fixed_image}")
+    print(f"  Command: {' '.join(fixed_cmd)}\n")
+    
+    attempt = 1
     fixed_version = None
     while fixed_version is None:
+        print(f"    [{time.strftime('%H:%M:%S')}] Attempt {attempt}: Starting command...")
+        start_time = time.time()
+        
         try:
-            start_time = time.time()
-            # NO TIMEOUT - let Docker finish naturally (takes ~0.8-1s per attempt)
+            # NO TIMEOUT - let the command finish naturally
+            # This is CRITICAL - must match test_docker_ready.py exactly
             result = subprocess.run(
                 fixed_cmd,
                 capture_output=True,
                 text=True,
                 check=False
             )
+            
             elapsed = time.time() - start_time
             
+            # Check if we got output
             if result.stdout.strip():
                 fixed_version = result.stdout.strip()
-                print(f"    ✓ Attempt {fixed_attempt}: SUCCESS after {elapsed:.2f}s")
-                print(f"      {fixed_version.split()[0:3]}")
+                print(f"    [{time.strftime('%H:%M:%S')}] Attempt {attempt}: ✓ SUCCESS after {elapsed:.2f}s")
+                print(f"    Output: {fixed_version}")
+                break
             else:
-                print(f"    ○ Attempt {fixed_attempt}: No output after {elapsed:.2f}s")
-                print(f"      Waiting 2 seconds before retry...")
+                print(f"    [{time.strftime('%H:%M:%S')}] Attempt {attempt}: ○ No output after {elapsed:.2f}s")
+                
+                # Show stderr if present
+                if result.stderr.strip():
+                    print(f"      stderr: {result.stderr.strip()[:100]}")
+                
+                # Wait before next attempt
+                print(f"    [{time.strftime('%H:%M:%S')}]   Waiting 2 seconds before next attempt...")
                 time.sleep(2.0)
-                fixed_attempt += 1
+                attempt += 1
+                
         except KeyboardInterrupt:
             print("\n\nCancelled by user")
             sys.exit(1)
