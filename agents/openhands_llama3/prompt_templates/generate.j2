@@ -16,6 +16,13 @@ You are proposing seed mutations for vulnerability research.
 **Task:** {{ task_id }}
 **Iteration:** {{ iteration }}
 
+**Context Sections (CRITICAL - READ THESE CAREFULLY):**
+{% for section in context.sections %}
+--- {{ section.filename }} ---
+{{ section.content }}
+
+{% endfor %}
+
 **Analysis from ANALYZE phase:**
 {{ analysis | tojson }}
 
@@ -98,6 +105,15 @@ Propose 1-5 mutations to apply to the current seed. Consider:
 - For buffer overflows: Combine truncate with overwrite
 - For header corruption: {"op": "overwrite_range", "offset": 0, "hex": "00"}
 - For size field manipulation: Overwrite size fields in headers
+
+**CRITICAL: If context says "use ONLY truncate", do NOT add other operations!**
+Example for CVE-2024-57970:
+```json
+{
+  "mutations": [{"op": "truncate", "new_len": 768}],
+  "rationale": "Simple truncation at block boundary as specified in context"
+}
+```
 
 **Output Format (JSON only, no markdown):**
 {
