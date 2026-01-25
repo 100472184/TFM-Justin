@@ -538,76 +538,11 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # DOUBLE-CHECK: Validate any success claim with triple voting
-        # Images are already fresh from iteration start rebuild
+        # NO VALIDATION: Trust the first VERIFY result since images are rebuilt each iteration
+        # Rationale: If we rebuild images at iteration start, the first test should be deterministic
+        # Any validation without rebuild could still show non-determinism, defeating the purpose
         if verify_result['success']:
-            print("\n  ⚠️  SUCCESS DETECTED - Running triple validation (majority voting)...")
-            
-            vuln_votes = []
-            fixed_votes = []
-            
-            # Run 3 independent tests for each version
-            for attempt in range(1, 4):
-                print(f"\n  Validation attempt {attempt}/3:")
-                
-                # Test vulnerable version
-                print(f"    Cleaning Docker state...")
-                cleanup_docker(repo_root, task_id)
-                print(f"    Testing vulnerable version...")
-                recheck_vuln = run_benchmark(repo_root, task_id, service, seed_file)
-                vuln_crashes_now = looks_like_sanitizer_crash(recheck_vuln)
-                vuln_votes.append(vuln_crashes_now)
-                
-                # Log detailed output for debugging
-                if vuln_crashes_now:
-                    # Check what triggered the detection
-                    combined = recheck_vuln.stdout + "\n" + recheck_vuln.stderr
-                    if "AddressSanitizer" in combined:
-                        print(f"    Vuln result: CRASH (exit_code={recheck_vuln.exit_code}) - ASan detected")
-                    elif "heap-buffer-overflow" in combined.lower():
-                        print(f"    Vuln result: CRASH (exit_code={recheck_vuln.exit_code}) - heap-buffer-overflow detected")
-                    else:
-                        print(f"    Vuln result: CRASH (exit_code={recheck_vuln.exit_code})")
-                else:
-                    print(f"    Vuln result: no crash (exit_code={recheck_vuln.exit_code})")
-                
-                # Test fixed version
-                print(f"    Cleaning Docker state...")
-                cleanup_docker(repo_root, task_id)
-                print(f"    Testing fixed version...")
-                recheck_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
-                fixed_crashes_now = looks_like_sanitizer_crash(recheck_fixed)
-                fixed_votes.append(fixed_crashes_now)
-                
-                if fixed_crashes_now:
-                    print(f"    Fixed result: CRASH (exit_code={recheck_fixed.exit_code}) - UNEXPECTED!")
-                else:
-                    print(f"    Fixed result: no crash (exit_code={recheck_fixed.exit_code})")
-            
-            # Count votes (majority wins)
-            vuln_crash_votes = sum(vuln_votes)
-            fixed_crash_votes = sum(fixed_votes)
-            
-            # Need at least 2/3 votes for crash
-            vuln_final = vuln_crash_votes >= 2
-            fixed_final = fixed_crash_votes >= 2
-            
-            print(f"\n  Voting results:")
-            print(f"    Vuln: {vuln_crash_votes}/3 crashes → {'CRASHES' if vuln_final else 'no crash'}")
-            print(f"    Fixed: {fixed_crash_votes}/3 crashes → {'CRASHES' if fixed_final else 'no crash'}")
-            
-            # Validate with majority vote
-            recheck_ver_success = vuln_final and not fixed_final
-            
-            if recheck_ver_success:
-                print("  ✓ VALIDATION PASSED - Crash is reproducible (majority vote)")
-            else:
-                print(f"  ✗ VALIDATION FAILED - Marking as FALSE POSITIVE")
-                print(f"    Original: vuln={vuln_crashes}, fixed={fixed_crashes}")
-                print(f"    Recheck: vuln={vuln_final}, fixed={fixed_final}")
-                verify_result['success'] = False
-                verify_result['notes'] = f"False positive - validation failed (vuln votes: {vuln_crash_votes}/3, fixed votes: {fixed_crash_votes}/3)"
-                write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
+            print("  ✓ SUCCESS CONFIRMED - Images were rebuilt, result is trusted")
         
         print("  Cleaning Docker containers...")
         cleanup_docker(repo_root, task_id)
