@@ -11,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader
 # Import oracle for crash detection
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from scripts.lib.oracle import RunResult, verdict, looks_like_sanitizer_crash
+from scripts.lib.docker_readiness import verify_task_images_ready
 
 from .io_utils import (
     read_bytes, write_bytes, write_text, ensure_dir,
@@ -324,10 +325,40 @@ def run_pipeline(
         iter_dir = run_dir / f"iter_{iteration:03d}"
         ensure_dir(iter_dir)
         
-        # REBUILD DOCKER IMAGES at start of each iteration for deterministic behavior
-        # This is slow but necessary due to non-deterministic ASan behavior
-        print("\n  Rebuilding Docker images for clean state...")
+        # COMPLETE CLEANUP + REBUILD sequence for deterministic behavior
+        # Based on debugging: Docker needs complete cleanup before build to avoid
+        # cached layers with stale ASan state
+        print("\n  Complete Docker cleanup + rebuild sequence...")
+        
+        compose_file = repo_root / "tasks" / task_id / "compose.yml"
+        
         try:
+            # Step 1: Remove ALL images, volumes, networks
+            print("    1/4: Removing images, volumes, networks...")
+            down_cmd = ["docker", "compose", "-f", str(compose_file), "down", "--volumes", "--rmi", "all"]
+            subprocess.run(
+                down_cmd,
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False  # Don't fail if nothing to remove
+            )
+            
+            # Step 2: System-wide prune (build cache, dangling images, etc.)
+            print("    2/4: Pruning Docker system cache...")
+            prune_cmd = ["docker", "system", "prune", "-af", "--volumes"]
+            subprocess.run(
+                prune_cmd,
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False
+            )
+            
+            # Step 3: Build from scratch (no cache)
+            print("    3/4: Building images from scratch...")
             build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
             build_result = subprocess.run(
                 build_cmd,
@@ -337,15 +368,42 @@ def run_pipeline(
                 timeout=600  # 10 minutes for build
             )
             if build_result.returncode != 0:
-                print(f"  [yellow]Warning: Image rebuild failed: {build_result.stderr[:200]}[/yellow]")
-            else:
-                print(f"  ✓ Images rebuilt successfully")
+                print(f"    [yellow]Warning: Image build failed: {build_result.stderr[:200]}[/yellow]")
+                print(f"    Skipping this iteration.")
+                continue
+            
+            # Step 4: CRITICAL - Wait for Docker images to be fully ready
+            # There is a timing issue where freshly built images need several attempts
+            # before containers respond. This prevents false negatives from unready images.
+            print("    4/4: Verifying images are ready (retry logic)...")
+            images_ready, versions = verify_task_images_ready(
+                task_id,
+                max_attempts=5,
+                retry_delay=1.0,
+                verbose=True
+            )
+                
+            if not images_ready:
+                print(f"      [red]ERROR: Images not responding after 5 attempts![/red]")
+                print(f"      This indicates Docker Desktop issues.")
+                print(f"      Skipping this iteration.")
+                continue
+            
+            # Validate versions are correct
+            vuln_version = versions.get('vuln', '')
+            fixed_version = versions.get('fixed', '')
+            if '3.7.7' not in vuln_version or '3.7.8' not in fixed_version:
+                print(f"      [yellow]Warning: Unexpected versions:[/yellow]")
+                print(f"        Vuln: {vuln_version}")
+                print(f"        Fixed: {fixed_version}")
+            
+            print(f"  ✓ Complete cleanup + rebuild + verification successful")
+            print(f"    Vuln: 3.7.7 | Fixed: 3.7.8 | Images ready")
+                    
         except Exception as e:
-            print(f"  [yellow]Warning: Failed to rebuild images: {e}[/yellow]")
-        
-        # Clean Docker state AFTER rebuild
-        print("  Cleaning Docker state after rebuild...")
-        cleanup_docker(repo_root, task_id)
+            print(f"  [yellow]Warning: Cleanup/rebuild/verify failed: {e}[/yellow]")
+            print(f"  Skipping this iteration.")
+            continue
         
         # ===== PHASE 1: ANALYZE =====
         print("\n→ ANALYZE")

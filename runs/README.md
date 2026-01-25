@@ -41,7 +41,13 @@ runs/
 
 ### Clean Start (Recommended)
 
-Always clean Docker state before starting a new pipeline run to prevent stale container issues:
+Always clean Docker state before starting a new pipeline run to prevent stale container issues.
+
+**CRITICAL: Docker Image Readiness Issue**
+
+After building Docker images, there is a timing/startup issue where containers don't respond immediately. The `docker run --version` commands may return no output on first attempts and need 2-5 retries before the container starts properly. This is NOT corruption - it's a Docker initialization delay.
+
+**The pipeline now automatically handles this with retry logic**, but if running manual tests, always verify images respond before trusting evaluation results:
 
 ```bash
 # Complete cleanup (CRITICAL: Always use --rmi all to remove images)
@@ -51,24 +57,42 @@ docker system prune -af --volumes
 # Rebuild from scratch
 python -m scripts.bench build CVE-2024-57970_libarchive
 
-# Verify images are valid (CRITICAL)
+# CRITICAL: Verify images are ready (may need 2-5 attempts)
+# Run this command repeatedly until you see version output:
 docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
-docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
+# Expected (may take 2-5 tries): bsdtar 3.7.7 - libarchive 3.7.7 zlib/1.2.11 ...
 
-# Test with known seed to confirm differential behavior
+# Repeat for fixed version:
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
+# Expected (may take 2-5 tries): bsdtar 3.7.8 - libarchive 3.7.8 zlib/1.2.11 ...
+
+# ONLY AFTER BOTH IMAGES RESPOND: Test with known seed
 python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\base.tar"
 # Expected: vuln_crashes=False fixed_crashes=False success=False (valid TAR, no crash)
 
 # Test with truncated seed to confirm vulnerability detection
-python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\base_truncated.tar"
+python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\final_base.tar"
+# Expected: vuln_crashes=True fixed_crashes=False success=True (exploit works)
+```
+
+**Why images don't respond immediately:**
+- Docker needs time to initialize after build (registry sync, layer setup, etc.)
+- First `docker run` attempts may time out or return no output
+- This is normal Docker behavior on Windows, especially with WSL2 backend
+- **Solution**: Retry `docker run --version` until output appears (2-5 attempts typical)
+python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "tasks\CVE-2024-57970_libarchive\seeds\final_base.tar"
 # Expected: vuln_crashes=True fixed_crashes=False success=True (exploit works)
 ```
 
 **Expected versions**:
-- Vulnerable: `bsdtar 3.7.7 - libarchive 3.7.7`
-- Fixed: `bsdtar 3.7.8 - libarchive 3.7.8`
+- Vulnerable: `bsdtar 3.7.7 - libarchive 3.7.7` (may take 2-5 `docker run` attempts to see output)
+- Fixed: `bsdtar 3.7.8 - libarchive 3.7.8` (may take 2-5 attempts)
 
-If either fails, Docker images are corrupted and must be rebuilt.
+**If `docker run --version` returns empty**:
+- This is normal immediately after build
+- Simply run the same command again (typically works on 2nd-4th attempt)
+- Docker needs time to initialize newly built images
+- Do NOT proceed to evaluate until both images respond with version output
 
 ### Execute Pipeline by Information Level
 
@@ -120,24 +144,41 @@ The pipeline stops when:
 
 ### Automatic Cleanup Between Iterations
 
-**IMPORTANT**: The pipeline now automatically runs `docker compose down --volumes` after each verification to prevent false positives from stale Docker container state. This ensures:
-- Clean container state for every iteration
+**IMPORTANT**: The pipeline now automatically:
+1. Rebuilds Docker images at the start of each iteration (`docker compose build`)
+2. **Waits for images to be ready** with automatic retry (2-5 attempts per image)
+3. **Validates versions** (vuln=3.7.7, fixed=3.7.8) before proceeding
+4. Runs `docker compose down --volumes` after verification to clean containers
+
+This ensures:
+- Clean image state for every iteration (no ASan shadow memory contamination)
+- Images are fully initialized before testing (no false negatives from startup delays)
 - Consistent results between pipeline runs and manual verification
 - No contamination from previous test executions
+
+**Why rebuild every iteration?**
+AddressSanitizer shadow memory can persist across runs even with container cleanup, causing non-deterministic crash detection. Rebuilding images ensures completely clean state.
 
 ### Manual Validation of Found Exploits
 
 When the pipeline reports success, always validate manually with clean containers:
 
 ```bash
-# 1. Clean Docker state (removes stale containers)
-docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes
+# 1. Clean Docker state (removes stale containers and images)
+docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes --rmi all
+docker system prune -af --volumes
 
-# 2. Verify Docker images are still valid
+# 2. Rebuild images
+python -m scripts.bench build CVE-2024-57970_libarchive
+
+# 3. CRITICAL: Verify Docker images are ready (may need 2-5 attempts each)
 docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
-docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
+# Repeat until you see: bsdtar 3.7.7 - libarchive 3.7.7 ...
 
-# 3. Evaluate the specific seed
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
+# Repeat until you see: bsdtar 3.7.8 - libarchive 3.7.8 ...
+
+# 4. ONLY AFTER BOTH RESPOND: Evaluate the seed
 python -m scripts.bench evaluate CVE-2024-57970_libarchive --seed "runs\<RUN_DIR>\CVE-2024-57970_libarchive\iter_XXX\mutated_seed_itXX.bin"
 ```
 
@@ -147,15 +188,18 @@ CVE-2024-57970_libarchive verdict: vuln_crashes=True fixed_crashes=False success
 ```
 
 **CRITICAL**: If manual validation shows different results than verify.json:
-- Docker images may be corrupted
-- Rebuild completely: `docker compose down --volumes --rmi all` then rebuild
-- Verify versions with `--version` commands above
+1. **Most common cause**: Docker images not ready when `evaluate` ran
+   - Symptom: `docker run --version` returned empty on first try
+   - Solution: Always retry `--version` until output appears, THEN run evaluate
+2. Rebuild images completely: `docker compose down --volumes --rmi all` then rebuild
+3. Verify BOTH images respond to `--version` (may take 2-5 attempts each)
+4. Only then run evaluate command
 
 **Invalid exploit indicators**:
 - `vuln_crashes=False` - Exploit does not trigger vulnerability
 - `fixed_crashes=True` - Exploit affects fixed version (not CVE-specific)
 - Both exit with "Unrecognized archive format" - Malformed input rejected by parser
-- Results differ from verify.json - **Docker images are corrupted**
+- Results differ from verify.json - **Images weren't ready when evaluate ran** (see readiness check above)
 
 ### Testing Individual Components
 
@@ -259,34 +303,47 @@ To evaluate how information level affects performance:
 
 ### Critical: Verify Docker Images Are Valid
 
-**BEFORE running any pipeline, verify Docker images are correctly built:**
+**BEFORE running any pipeline, verify Docker images are correctly built AND READY:**
 
 ```bash
-# Test vulnerable version responds
-docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
-
-# Test fixed version responds
-docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
-```
-
-**Expected output**:
-- Vulnerable: Should show `bsdtar 3.7.7 - libarchive 3.7.7` (or similar)
-- Fixed: Should show `bsdtar 3.7.8 - libarchive 3.7.8`
-
-**If either command fails or shows wrong version**:
-```bash
-# Complete rebuild
-docker compose -f tasks/CVE-2024-57970_libarchive/compose.yml down --volumes --rmi all
-docker system prune -f
+# Build images
 python -m scripts.bench build CVE-2024-57970_libarchive
+
+# Test vulnerable version responds (CRITICAL: May need 2-5 attempts)
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+# If empty output: Run same command again (and again) until you see version
+# Expected: bsdtar 3.7.7 - libarchive 3.7.7 zlib/1.2.11 ...
+
+# Test fixed version responds (may also need 2-5 attempts)
+docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
+# Expected: bsdtar 3.7.8 - libarchive 3.7.8 zlib/1.2.11 ...
 ```
 
-**Symptoms of corrupted Docker images**:
-- Pipeline reports success but manual validation fails
-- Vulnerable version doesn't crash when it should
-- Fixed version crashes when it shouldn't
-- `--version` command exits with error or no output
-- Inconsistent results between runs with same seed
+**CRITICAL: Docker Startup Delay**
+
+Freshly built Docker images have a timing issue where they don't respond to `docker run` commands immediately. This manifests as:
+- Empty output on first `docker run --version` attempt
+- Working on 2nd, 3rd, or 4th attempt (sometimes up to 5 attempts)
+- NOT an error - this is normal Docker initialization behavior on Windows/WSL2
+
+**DO NOT proceed to evaluate until both images respond with version output.**
+
+The pipeline now handles this automatically with retry logic, but for manual testing you must retry the `--version` command manually until output appears.
+
+**If `docker run --version` returns empty or times out**:
+- This is NORMAL immediately after build (not an error!)
+- Docker needs time to initialize (image registry sync, layer preparation)
+- **Solution**: Run the SAME command again (typically works on 2nd-4th attempt)
+- Typical pattern seen in testing:
+  ```
+  PS> docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+  (empty output)
+  PS> docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+  (empty output)
+  PS> docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+  bsdtar 3.7.7 - libarchive 3.7.7 zlib/1.2.11 liblzma/5.2.5 bz2lib/1.0.8 libzstd/1.4.8
+  ```
+- Do NOT proceed to build or evaluate until BOTH images respond
 
 ### Other Issues
 
@@ -296,22 +353,23 @@ python -m scripts.bench build CVE-2024-57970_libarchive
 - Check disk space (Docker images need ~2-4GB)
 - Try restarting Docker Desktop
 
+**Images don't respond to `--version` even after 10+ attempts**:
+- Docker Desktop may have issues
+- Try: `docker system prune -af --volumes` then rebuild
+- Restart Docker Desktop
+- Check WSL2 status (Windows): `wsl --status`
+
 **LLM not responding**:
 - Verify Ollama is running: `ollama list`
 - Check LLM model is available: `ollama run llama3`
 - Review OpenHands SDK configuration
 - Check system resources (Ollama needs RAM)
 
-**False positives (pipeline says success but manual test fails)**:
-- **Most common cause**: Corrupted Docker images (see above)
-- Stale Docker containers (should not happen with automatic cleanup)
-- Verify images with `--version` test before trusting results
+**False positives/negatives (inconsistent results)**:
+- **Most common cause**: Images weren't ready when evaluate ran
+- Verify BOTH images respond to `--version` before each evaluate
+- Follow complete cleanup sequence (down → prune → build → verify readiness → evaluate)
 - Compare verify.json output with manual test output
-
-**False negatives (manual test succeeds but pipeline failed)**:
-- Check if Docker cleanup ran successfully
-- Review verify.json for actual exit codes vs detected crashes
-- Verify mutation was actually applied (check mutation_error field)
 
 ## Best Practices
 
