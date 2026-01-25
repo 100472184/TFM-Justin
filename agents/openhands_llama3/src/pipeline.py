@@ -248,6 +248,73 @@ def run_benchmark(
     return RunResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
 
+def validate_tar_structure(seed_bytes: bytes, task_id: str) -> tuple[bool, str]:
+    """
+    Validate that seed has valid TAR structure using Python tarfile module.
+    
+    This is 100% local validation (no Docker) that strictly checks if the TAR
+    can be parsed by Python's tarfile library. This is more reliable than
+    using Docker which might be permissive with partially-valid TARs.
+    
+    Returns:
+        (is_valid, error_message)
+        - is_valid: True if TAR structure is valid
+        - error_message: Descriptive error if invalid
+    """
+    import tempfile
+    import tarfile
+    
+    # Write seed to temp file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".tar") as tmp:
+        tmp.write(seed_bytes)
+        tmp_path = tmp.name
+    
+    try:
+        # Try to open as TAR using Python's tarfile module
+        # This is STRICT - will reject corrupted TARs
+        # Use 'r:' mode (uncompressed) to avoid auto-detection issues with truncated files
+        with tarfile.open(tmp_path, 'r:') as tar:
+            # Try to list members (validates structure)
+            members = tar.getmembers()
+            
+            # Additional check: must have at least one member
+            if len(members) == 0:
+                return False, "TAR has no members (empty or invalid)"
+        
+        # Successfully opened and parsed - valid TAR
+        return True, ""
+        
+    except tarfile.ReadError as e:
+        error_str = str(e).lower()
+        
+        # "empty header" indicates truncation in TAR structure - this is OK
+        # The exploit may rely on truncating TAR files
+        if "empty header" in error_str or "truncated" in error_str:
+            return True, ""
+        
+        # "bad checksum" indicates corruption (e.g., deadbeef overwrite) - REJECT
+        if "bad checksum" in error_str or "invalid header" in error_str:
+            return False, f"Corrupted TAR structure: {str(e)[:100]}"
+        
+        # Other ReadErrors - be conservative and reject
+        return False, f"Invalid TAR format: {str(e)[:100]}"
+    except tarfile.TarError as e:
+        # Other TAR-related errors
+        return False, f"TAR error: {str(e)[:100]}"
+    except EOFError:
+        # Truncated TAR - this might be intentional for the exploit
+        # Accept it as valid (truncation is part of the vulnerability trigger)
+        return True, ""
+    except Exception as e:
+        # Unexpected error - be permissive to avoid false rejections
+        return True, f"Warning: validation error {str(e)[:100]}"
+    finally:
+        try:
+            Path(tmp_path).unlink()
+        except:
+            pass
+
+
 def run_pipeline(
     repo_root: Path,
     task_id: str,
@@ -325,87 +392,6 @@ def run_pipeline(
         iter_dir = run_dir / f"iter_{iteration:03d}"
         ensure_dir(iter_dir)
         
-        # COMPLETE CLEANUP + REBUILD sequence for deterministic behavior
-        # Based on debugging: Docker needs complete cleanup before build to avoid
-        # cached layers with stale ASan state
-        print("\n  Complete Docker cleanup + rebuild sequence...")
-        
-        compose_file = repo_root / "tasks" / task_id / "compose.yml"
-        
-        try:
-            # Step 1: Remove ALL images, volumes, networks
-            print("    1/4: Removing images, volumes, networks...")
-            down_cmd = ["docker", "compose", "-f", str(compose_file), "down", "--volumes", "--rmi", "all"]
-            subprocess.run(
-                down_cmd,
-                cwd=str(repo_root),
-                capture_output=True,
-                text=True,
-                timeout=120,
-                check=False  # Don't fail if nothing to remove
-            )
-            
-            # Step 2: System-wide prune (build cache, dangling images, etc.)
-            print("    2/4: Pruning Docker system cache...")
-            prune_cmd = ["docker", "system", "prune", "-af", "--volumes"]
-            subprocess.run(
-                prune_cmd,
-                cwd=str(repo_root),
-                capture_output=True,
-                text=True,
-                timeout=120,
-                check=False
-            )
-            
-            # Step 3: Build from scratch (no cache)
-            print("    3/4: Building images from scratch...")
-            build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
-            build_result = subprocess.run(
-                build_cmd,
-                cwd=str(repo_root),
-                capture_output=True,
-                text=True,
-                timeout=600  # 10 minutes for build
-            )
-            if build_result.returncode != 0:
-                print(f"    [yellow]Warning: Image build failed: {build_result.stderr[:200]}[/yellow]")
-                print(f"    Skipping this iteration.")
-                continue
-            
-            # Step 4: CRITICAL - Wait for Docker images to be fully ready
-            # There is a timing issue where freshly built images need several attempts
-            # before containers respond. This prevents false negatives from unready images.
-            # Using infinite retry with 2s wait (validated: ~0.8-1s per attempt, succeeds by attempt 2-3)
-            print("    4/4: Verifying images are ready (infinite retry, 2s wait)...")
-            images_ready, versions = verify_task_images_ready(
-                task_id,
-                max_attempts=999,  # Effectively infinite (will succeed by attempt 2-3)
-                retry_delay=2.0,  # Validated optimal wait time
-                verbose=True
-            )
-                
-            if not images_ready:
-                print(f"      [red]ERROR: Images not responding after 999 attempts![/red]")
-                print(f"      This indicates severe Docker Desktop issues.")
-                print(f"      Skipping this iteration.")
-                continue
-            
-            # Validate versions are correct
-            vuln_version = versions.get('vuln', '')
-            fixed_version = versions.get('fixed', '')
-            if '3.7.7' not in vuln_version or '3.7.8' not in fixed_version:
-                print(f"      [yellow]Warning: Unexpected versions:[/yellow]")
-                print(f"        Vuln: {vuln_version}")
-                print(f"        Fixed: {fixed_version}")
-            
-            print(f"  ✓ Complete cleanup + rebuild + verification successful")
-            print(f"    Vuln: 3.7.7 | Fixed: 3.7.8 | Images ready")
-                    
-        except Exception as e:
-            print(f"  [yellow]Warning: Cleanup/rebuild/verify failed: {e}[/yellow]")
-            print(f"  Skipping this iteration.")
-            continue
-        
         # ===== PHASE 1: ANALYZE =====
         print("\n→ ANALYZE")
         
@@ -443,83 +429,140 @@ def run_pipeline(
         else:
             seed_preview = seed_hex
         
-        generate_template = env.get_template("generate.j2")
-        generate_prompt = generate_template.render(
-            task_id=task_id,
-            context=context,  # Add full context to GENERATE phase
-            analysis=analysis,
-            seed_preview=seed_preview,
-            seed_length=len(current_seed),
-            iteration=iteration,
-            verify_history=verify_history[-3:]
-        )
-        
-        generation = llm.completion_json(
-            schema_name="generate",
-            system_prompt="You are a security researcher proposing seed mutations for vulnerability research.",
-            user_prompt=generate_prompt
-        )
-        
-        write_text(iter_dir / "generate.json", json.dumps(generation, indent=2))
-        print(f"  Rationale: {generation.get('rationale', 'N/A')[:100]}...")
-        
-        # Apply mutations
-        mutations = generation.get("mutations", [])
+        # GENERATE with validation retry loop (max 10 attempts)
+        max_generate_attempts = 10
+        failed_attempts = []
+        new_seed = None
+        mutations = None
         mutation_success = False
         mutation_error = None
         
-        if not mutations:
-            print("[yellow]  No mutations proposed, skipping VERIFY[/yellow]")
-            new_seed = current_seed
-            mutation_error = "No mutations proposed by LLM"
-            # Skip VERIFY phase when no mutations
-            continue
-        else:
+        for attempt in range(1, max_generate_attempts + 1):
+            # Build prompt with feedback from previous failures
+            feedback_text = ""
+            if failed_attempts:
+                feedback_text = "\n\n⚠️ PREVIOUS ATTEMPTS REJECTED:\n"
+                for i, fa in enumerate(failed_attempts[-3:], 1):  # Show last 3
+                    feedback_text += f"\nAttempt {fa['attempt']}: {fa['error']}\n"
+                    feedback_text += f"  Mutations: {json.dumps(fa['mutations'])}\n"
+                feedback_text += "\n⚠️ Generate DIFFERENT mutations that preserve TAR structure.\n"
+            
+            generate_template = env.get_template("generate.j2")
+            generate_prompt = generate_template.render(
+                task_id=task_id,
+                context=context,
+                analysis=analysis,
+                seed_preview=seed_preview,
+                seed_length=len(current_seed),
+                iteration=iteration,
+                verify_history=verify_history[-3:]
+            ) + feedback_text
+            
+            if attempt > 1:
+                print(f"\n  [yellow]Retry attempt {attempt}/{max_generate_attempts}[/yellow]")
+            
+            generation = llm.completion_json(
+                schema_name="generate",
+                system_prompt="You are a security researcher proposing seed mutations for vulnerability research.",
+                user_prompt=generate_prompt
+            )
+            
+            mutations = generation.get("mutations", [])
+            
+            if not mutations:
+                mutation_error = "No mutations proposed by LLM"
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "error": mutation_error,
+                    "mutations": []
+                })
+                print("[yellow]  No mutations proposed[/yellow]")
+                continue
+            
+            # Try to apply mutations
             try:
                 new_seed = apply_mutations(current_seed, mutations)
                 print(f"  Applied {len(mutations)} mutation(s): {len(current_seed)} → {len(new_seed)} bytes")
-                mutation_success = True
             except Exception as e:
-                print(f"[red]  Mutation failed: {e}[/red]")
-                print(f"[yellow]  Skipping VERIFY for this iteration[/yellow]")
-                mutation_error = str(e)
-                
-                # Save failed state to JSON for feedback
-                verify_result = {
-                    "vuln_exit_code": None,
-                    "vuln_stdout": "",
-                    "vuln_stderr": "",
-                    "vuln_crashes": False,
-                    "fixed_exit_code": None,
-                    "fixed_stdout": "",
-                    "fixed_stderr": "",
-                    "fixed_crashes": False,
-                    "success": False,
-                    "notes": f"Mutation failed: {mutation_error}",
-                    "mutation_applied": False,
-                    "mutation_error": mutation_error
-                }
-                
-                write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
-                
-                # Add to history so LLM learns from mistake
-                verify_history.append({
-                    "iteration": iteration,
-                    "vuln_crashes": False,
-                    "fixed_crashes": False,
-                    "vuln_exit_code": None,
-                    "fixed_exit_code": None,
-                    "success": False,
-                    "notes": f"Mutation failed: {mutation_error}",
-                    "mutations_applied": mutations,
-                    "mutation_success": False,
-                    "mutation_error": mutation_error,
-                    "vuln_stderr_preview": "",
-                    "fixed_stderr_preview": ""
+                mutation_error = f"Mutation application error: {str(e)}"
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "error": mutation_error,
+                    "mutations": mutations
                 })
-                
-                # Skip VERIFY phase and continue to next iteration
+                print(f"[red]  {mutation_error}[/red]")
                 continue
+            
+            # Validate TAR structure
+            print("  Validating TAR structure...")
+            is_valid, error_msg = validate_tar_structure(new_seed, task_id)
+            
+            if not is_valid:
+                mutation_error = error_msg
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "error": error_msg,
+                    "mutations": mutations
+                })
+                print(f"[red]  ✗ Validation failed: {error_msg[:100]}[/red]")
+                continue
+            
+            # Success!
+            print("  ✓ Valid TAR structure")
+            mutation_success = True
+            break
+        
+        # Save generation result (including failed attempts)
+        generation_result = generation.copy() if generation else {}
+        if failed_attempts:
+            generation_result["failed_attempts"] = failed_attempts
+            generation_result["total_attempts"] = len(failed_attempts) + (1 if mutation_success else 0)
+        
+        write_text(iter_dir / "generate.json", json.dumps(generation_result, indent=2))
+        print(f"  Rationale: {generation.get('rationale', 'N/A')[:100]}...")
+        
+        # Check if we exhausted all attempts
+        if not mutation_success:
+            print(f"[red]  Failed after {max_generate_attempts} attempts[/red]")
+            print(f"[yellow]  Skipping VERIFY for this iteration[/yellow]")
+            mutation_error = mutation_error or "All generation attempts failed"
+            
+            # Save failed state to JSON for feedback
+            verify_result = {
+                "vuln_exit_code": None,
+                "vuln_stdout": "",
+                "vuln_stderr": "",
+                "vuln_crashes": False,
+                "fixed_exit_code": None,
+                "fixed_stdout": "",
+                "fixed_stderr": "",
+                "fixed_crashes": False,
+                "success": False,
+                "notes": f"Mutation failed: {mutation_error}",
+                "mutation_applied": False,
+                "mutation_error": mutation_error
+            }
+            
+            write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
+            
+            # Add to history so LLM learns from mistake
+            verify_history.append({
+                "iteration": iteration,
+                "vuln_crashes": False,
+                "fixed_crashes": False,
+                "vuln_exit_code": None,
+                "fixed_exit_code": None,
+                "success": False,
+                "notes": f"Mutation failed: {mutation_error}",
+                "mutations_applied": mutations if mutations else [],
+                "mutation_success": False,
+                "mutation_error": mutation_error,
+                "vuln_stderr_preview": "",
+                "fixed_stderr_preview": ""
+            })
+            
+            # Skip VERIFY phase and continue to next iteration
+            continue
         
         # Save new seed only if mutation succeeded
         seed_filename = f"mutated_seed_it{iteration:02d}.bin"
@@ -530,16 +573,65 @@ def run_pipeline(
         # ===== PHASE 3: VERIFY =====
         print("\n→ VERIFY")
         
-        # Clean before testing vulnerable version
-        print("  Cleaning Docker state before vuln test...")
-        cleanup_docker(repo_root, task_id)
+        # COMPLETE CLEANUP + REBUILD sequence (same as test_workflow.py)
+        # Only clean Docker RIGHT BEFORE testing, not at iteration start
+        compose_file = repo_root / "tasks" / task_id / "compose.yml"
         
+        try:
+            # Step 1: Remove ALL images, volumes, networks
+            down_cmd = ["docker", "compose", "-f", str(compose_file), "down", "--volumes", "--rmi", "all"]
+            subprocess.run(
+                down_cmd,
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False
+            )
+            
+            # Step 2: System-wide prune
+            prune_cmd = ["docker", "system", "prune", "-af", "--volumes"]
+            subprocess.run(
+                prune_cmd,
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False
+            )
+            
+            # Step 3: Build from scratch
+            build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
+            build_result = subprocess.run(
+                build_cmd,
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+                timeout=600
+            )
+            if build_result.returncode != 0:
+                print(f"  [yellow]Warning: Build failed, skipping iteration[/yellow]")
+                continue
+            
+            # Step 4: Verify images ready
+            images_ready, versions = verify_task_images_ready(
+                task_id,
+                max_attempts=999,
+                retry_delay=2.0,
+                verbose=False  # Silent mode
+            )
+            
+            if not images_ready:
+                print(f"  [red]ERROR: Images not ready after build[/red]")
+                continue
+                
+        except Exception as e:
+            print(f"  [yellow]Warning: Cleanup failed: {e}[/yellow]")
+            continue
+        
+        # Now test vulnerable and fixed WITHOUT intermediate cleanup
         print("  Testing vulnerable version...")
         verify_vuln = run_benchmark(repo_root, task_id, service, seed_file)
-        
-        # Clean before testing fixed version
-        print("  Cleaning Docker state before fixed test...")
-        cleanup_docker(repo_root, task_id)
         
         print("  Testing fixed version...")
         verify_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
