@@ -382,6 +382,71 @@ def run_pipeline(
     # History for prompts
     verify_history = []
     
+    # ===== INITIAL DOCKER SETUP (once per pipeline run) =====
+    print("\n" + "="*60)
+    print("DOCKER INITIALIZATION")
+    print("="*60)
+    
+    compose_file = repo_root / "tasks" / task_id / "compose.yml"
+    
+    # Step 1: Initial cleanup - remove any stale state from previous runs
+    print("\n  Step 1: Cleaning stale Docker state...")
+    try:
+        prune_cmd = ["docker", "system", "prune", "-af", "--volumes"]
+        subprocess.run(
+            prune_cmd,
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False
+        )
+        print("  ✓ Cleanup complete")
+    except Exception as e:
+        print(f"  [yellow]Warning: Initial cleanup failed: {e}[/yellow]")
+    
+    # Step 2: Build images from scratch with --no-cache
+    print("\n  Step 2: Building Docker images (no cache)...")
+    try:
+        build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id, "--no-cache"]
+        build_result = subprocess.run(
+            build_cmd,
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+        if build_result.returncode != 0:
+            print(f"  [red]ERROR: Build failed[/red]")
+            print(f"  {build_result.stderr}")
+            return {"success": False, "iteration": 0, "run_dir": run_dir, "error": "Build failed"}
+        print("  ✓ Build complete")
+    except Exception as e:
+        print(f"  [red]ERROR: Build exception: {e}[/red]")
+        return {"success": False, "iteration": 0, "run_dir": run_dir, "error": str(e)}
+    
+    # Step 3: Verify images are ready
+    print("\n  Step 3: Verifying images are ready...")
+    try:
+        images_ready, versions = verify_task_images_ready(
+            task_id,
+            max_attempts=3,
+            retry_delay=2.0,
+            verbose=True
+        )
+        
+        if not images_ready:
+            print(f"  [red]ERROR: Images not ready after build[/red]")
+            return {"success": False, "iteration": 0, "run_dir": run_dir, "error": "Images not ready"}
+        
+        print(f"  ✓ Vulnerable version: {versions.get('vuln', 'unknown')}")
+        print(f"  ✓ Fixed version: {versions.get('fixed', 'unknown')}")
+    except Exception as e:
+        print(f"  [red]ERROR: Image verification failed: {e}[/red]")
+        return {"success": False, "iteration": 0, "run_dir": run_dir, "error": str(e)}
+    
+    print("\n  ✓ Docker initialization complete - images ready for testing")
+    
     success = False
     
     for iteration in range(1, max_iters + 1):
@@ -573,63 +638,22 @@ def run_pipeline(
         # ===== PHASE 3: VERIFY =====
         print("\n→ VERIFY")
         
-        # COMPLETE CLEANUP + REBUILD sequence (same as test_workflow.py)
-        # Only clean Docker RIGHT BEFORE testing, not at iteration start
-        compose_file = repo_root / "tasks" / task_id / "compose.yml"
-        
+        # Lightweight cleanup: only remove volumes and network (NOT images)
+        # Images were built once at pipeline start and are reused across iterations
         try:
-            # Step 1: Remove ALL images, volumes, networks
-            down_cmd = ["docker", "compose", "-f", str(compose_file), "down", "--volumes", "--rmi", "all"]
+            down_cmd = ["docker", "compose", "-f", str(compose_file), "down", "--volumes"]
             subprocess.run(
                 down_cmd,
                 cwd=str(repo_root),
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=30,
                 check=False
             )
-            
-            # Step 2: System-wide prune
-            prune_cmd = ["docker", "system", "prune", "-af", "--volumes"]
-            subprocess.run(
-                prune_cmd,
-                cwd=str(repo_root),
-                capture_output=True,
-                text=True,
-                timeout=120,
-                check=False
-            )
-            
-            # Step 3: Build from scratch
-            build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
-            build_result = subprocess.run(
-                build_cmd,
-                cwd=str(repo_root),
-                capture_output=True,
-                text=True,
-                timeout=600
-            )
-            if build_result.returncode != 0:
-                print(f"  [yellow]Warning: Build failed, skipping iteration[/yellow]")
-                continue
-            
-            # Step 4: Verify images ready
-            images_ready, versions = verify_task_images_ready(
-                task_id,
-                max_attempts=999,
-                retry_delay=2.0,
-                verbose=False  # Silent mode
-            )
-            
-            if not images_ready:
-                print(f"  [red]ERROR: Images not ready after build[/red]")
-                continue
-                
         except Exception as e:
             print(f"  [yellow]Warning: Cleanup failed: {e}[/yellow]")
-            continue
         
-        # Now test vulnerable and fixed WITHOUT intermediate cleanup
+        # Test vulnerable and fixed (images already built and verified)
         print("  Testing vulnerable version...")
         verify_vuln = run_benchmark(repo_root, task_id, service, seed_file)
         
