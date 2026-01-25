@@ -405,10 +405,10 @@ def run_pipeline(
     except Exception as e:
         print(f"  [yellow]Warning: Initial cleanup failed: {e}[/yellow]")
     
-    # Step 2: Build images from scratch with --no-cache
+    # Step 2: Build images from scratch (bench.py already uses --no-cache)
     print("\n  Step 2: Building Docker images (no cache)...")
     try:
-        build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id, "--no-cache"]
+        build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
         build_result = subprocess.run(
             build_cmd,
             cwd=str(repo_root),
