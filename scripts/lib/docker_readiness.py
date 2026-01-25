@@ -20,22 +20,24 @@ def verify_image_ready(
     args: list[str],
     max_attempts: int = 5,
     retry_delay: float = 1.0,
-    timeout: int = 10
+    timeout: int = 10,
+    infinite_retry: bool = False
 ) -> tuple[bool, Optional[str]]:
     """
     Verify that a Docker image is ready by attempting to run it until it responds.
     
     After building images, Docker needs time to initialize. This function retries
     docker run commands until the container responds with output, or max attempts
-    is reached.
+    is reached (unless infinite_retry=True).
     
     Args:
         image_name: Full Docker image name (e.g., "cve-2024-57970_libarchive-target-vuln")
         entrypoint: Entrypoint to override (e.g., "/opt/target/bin/bsdtar")
         args: Arguments to pass to entrypoint (e.g., ["--version"])
-        max_attempts: Maximum number of retry attempts (default: 5)
+        max_attempts: Maximum number of retry attempts (default: 5, ignored if infinite_retry=True)
         retry_delay: Seconds to wait between attempts (default: 1.0)
         timeout: Timeout in seconds for each docker run (default: 10)
+        infinite_retry: If True, retry forever until success (default: False)
     
     Returns:
         Tuple of (success: bool, output: Optional[str])
@@ -46,12 +48,13 @@ def verify_image_ready(
         >>> success, output = verify_image_ready(
         ...     "cve-2024-57970_libarchive-target-vuln",
         ...     "/opt/target/bin/bsdtar",
-        ...     ["--version"]
+        ...     ["--version"],
+        ...     infinite_retry=True
         ... )
-        >>> if success:
-        ...     print(f"Image ready: {output}")
+        >>> print(f"Image ready: {output}")
     """
-    for attempt in range(1, max_attempts + 1):
+    attempt = 1
+    while True:
         try:
             result = subprocess.run(
                 ["docker", "run", "--rm", "--entrypoint", entrypoint, image_name] + args,

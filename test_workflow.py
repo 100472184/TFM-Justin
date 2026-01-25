@@ -19,13 +19,12 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # Add repo root to path
 repo_root = Path(__file__).parent
 sys.path.insert(0, str(repo_root))
-
-from scripts.lib.docker_readiness import verify_task_images_ready
 
 
 TASK_ID = "CVE-2024-57970_libarchive"
@@ -100,41 +99,84 @@ Press Ctrl+C now to cancel, or Enter to continue...
         "Step 3: Building Docker images from scratch"
     )
     
-    # Step 4: Verify images are ready with retry logic
+    # Step 4: Verify images are ready with INFINITE retry logic
     print(f"\n{'='*60}")
-    print(f"  Step 4: Verifying images are ready (with retry)")
+    print(f"  Step 4: Verifying images are ready (infinite retry)")
     print(f"{'='*60}\n")
     
-    print("  This may take 2-5 attempts per image (normal Docker startup delay)...\n")
+    print("  This may take 2-5 attempts per image (sometimes more)...")
+    print("  Will retry until both images respond (Ctrl+C to cancel)\n")
     
-    images_ready, versions = verify_task_images_ready(
-        TASK_ID,
-        max_attempts=5,
-        retry_delay=1.0,
-        verbose=True
-    )
+    # Verify vulnerable image with infinite retry
+    vuln_image = f"{TASK_ID}-target-vuln"
+    vuln_cmd = ["docker", "run", "--rm", "--entrypoint", "/opt/target/bin/bsdtar", vuln_image, "--version"]
     
-    if not images_ready:
-        print(f"\n{'='*60}")
-        print("  [FAILURE] Images not responding after 5 attempts")
-        print(f"{'='*60}\n")
-        print("Possible issues:")
-        print("  - Docker Desktop not running properly")
-        print("  - WSL2 backend issues (Windows)")
-        print("  - Insufficient resources")
-        print("\nSuggestions:")
-        print("  - Restart Docker Desktop")
-        print("  - Check: wsl --status (Windows)")
-        print("  - Check: docker info")
-        sys.exit(1)
+    print(f"  Checking vulnerable image ({vuln_image})...")
+    vuln_attempt = 1
+    vuln_version = None
+    while vuln_version is None:
+        try:
+            result = subprocess.run(
+                vuln_cmd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False
+            )
+            if result.stdout.strip():
+                vuln_version = result.stdout.strip()
+                print(f"    ✓ Attempt {vuln_attempt}: SUCCESS")
+                print(f"      {vuln_version.split()[0:3]}")
+            else:
+                print(f"    ○ Attempt {vuln_attempt}: (no output, retrying...)")
+                time.sleep(1.0)
+                vuln_attempt += 1
+        except subprocess.TimeoutExpired:
+            print(f"    ○ Attempt {vuln_attempt}: (timeout, retrying...)")
+            time.sleep(1.0)
+            vuln_attempt += 1
+        except KeyboardInterrupt:
+            print("\n\nCancelled by user")
+            sys.exit(1)
+    
+    # Verify fixed image with infinite retry
+    fixed_image = f"{TASK_ID}-target-fixed"
+    fixed_cmd = ["docker", "run", "--rm", "--entrypoint", "/opt/target/bin/bsdtar", fixed_image, "--version"]
+    
+    print(f"\n  Checking fixed image ({fixed_image})...")
+    fixed_attempt = 1
+    fixed_version = None
+    while fixed_version is None:
+        try:
+            result = subprocess.run(
+                fixed_cmd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False
+            )
+            if result.stdout.strip():
+                fixed_version = result.stdout.strip()
+                print(f"    ✓ Attempt {fixed_attempt}: SUCCESS")
+                print(f"      {fixed_version.split()[0:3]}")
+            else:
+                print(f"    ○ Attempt {fixed_attempt}: (no output, retrying...)")
+                time.sleep(1.0)
+                fixed_attempt += 1
+        except subprocess.TimeoutExpired:
+            print(f"    ○ Attempt {fixed_attempt}: (timeout, retrying...)")
+            time.sleep(1.0)
+            fixed_attempt += 1
+        except KeyboardInterrupt:
+            print("\n\nCancelled by user")
+            sys.exit(1)
+    
+    versions = {'vuln': vuln_version, 'fixed': fixed_version}
     
     # Step 5: Validate versions
     print(f"\n{'='*60}")
     print(f"  Step 5: Validating versions")
     print(f"{'='*60}\n")
-    
-    vuln_version = versions.get('vuln', '')
-    fixed_version = versions.get('fixed', '')
     
     vuln_ok = '3.7.7' in vuln_version
     fixed_ok = '3.7.8' in fixed_version

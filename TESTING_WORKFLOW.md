@@ -12,12 +12,36 @@ docker system prune -af --volumes
 # Rebuild images
 python -m scripts.bench build CVE-2024-57970_libarchive
 
-# Verify images are correct
+# CRITICAL: Verify images are ready (may need 2-10 attempts, keep retrying!)
+# Run this command REPEATEDLY until you see version output:
 docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
-# Expected: bsdtar 3.7.7 - libarchive 3.7.7
+# Expected (after 2-10 tries): bsdtar 3.7.7 - libarchive 3.7.7
 
+# Run this command REPEATEDLY until you see version output:
 docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-fixed --version
-# Expected: bsdtar 3.7.8 - libarchive 3.7.8
+# Expected (after 2-10 tries): bsdtar 3.7.8 - libarchive 3.7.8
+
+# DO NOT PROCEED until BOTH commands return version output!
+```
+
+**⚠️ CRITICAL**: The `docker run --version` commands will return EMPTY output on first attempts. This is NORMAL. Simply run the SAME command again (and again) until you see the version. Typical pattern:
+```powershell
+PS> docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+(empty)
+PS> docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+(empty)
+PS> docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+(empty)
+PS> docker run --rm --entrypoint /opt/target/bin/bsdtar cve-2024-57970_libarchive-target-vuln --version
+bsdtar 3.7.7 - libarchive 3.7.7 zlib/1.2.11 liblzma/5.2.5 bz2lib/1.0.8 libzstd/1.4.8
+```
+
+**TIP**: Use `test_workflow.py` script which does infinite retry automatically:
+```powershell
+python test_workflow.py
+# Will show: "○ Attempt 1: (no output, retrying...)"
+#            "○ Attempt 2: (no output, retrying...)"
+#            "✓ Attempt 4: SUCCESS"
 ```
 
 ### 2. Run Pipeline Test
@@ -245,6 +269,38 @@ docker network ls | Select-String "cve-2024"  # Should be empty
 ```
 
 ## Automated Test Script (Individual Commands)
+
+**RECOMMENDED**: Use `test_workflow.py` for complete cleanup + build + verify with infinite retry:
+```powershell
+python test_workflow.py
+```
+
+This script will:
+1. Complete Docker cleanup (down + prune)
+2. Build from scratch
+3. **Verify images with infinite retry** (shows attempt numbers)
+4. Validate versions
+5. Test with known exploit
+
+Output example:
+```
+Step 4: Verifying images are ready (infinite retry)
+  Checking vulnerable image...
+    ○ Attempt 1: (no output, retrying...)
+    ○ Attempt 2: (no output, retrying...)
+    ○ Attempt 3: (no output, retrying...)
+    ✓ Attempt 4: SUCCESS
+      ['bsdtar', '3.7.7', '-']
+  
+  Checking fixed image...
+    ○ Attempt 1: (no output, retrying...)
+    ✓ Attempt 2: SUCCESS
+      ['bsdtar', '3.7.8', '-']
+```
+
+---
+
+### Alternative: PowerShell Script for Testing Seeds
 
 Save this as `test_seed.ps1`:
 
