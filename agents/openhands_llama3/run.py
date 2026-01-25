@@ -72,35 +72,7 @@ def main():
     print(f"Repo Root:    {repo_root}")
     print(f"{'='*70}\n")
 
-    # Check if Docker image exists (containers run ephemerally via docker compose run)
-    import subprocess
-    try:
-        # Check if the Docker image has been built
-        # Docker Compose uses underscores in image names from directory names
-        image_name = f"{args.task_id.lower()}-{args.service}"
-        result = subprocess.run(
-            ["docker", "images", "-q", image_name],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        
-        if not result.stdout.strip():
-            print(f"⚠️  WARNING: Docker image not found for '{image_name}'")
-            print(f"   You need to build the image first:")
-            print(f"   python -m scripts.bench build {args.task_id}\n")
-            
-            response = input("Continue anyway? (y/N): ")
-            if response.lower() != 'y':
-                print("Exiting...")
-                return 1
-        else:
-            print(f"✓ Docker image '{image_name}' found\n")
-    except Exception as e:
-        print(f"⚠️  Could not check Docker status: {e}")
-        print(f"   Make sure Docker is running.\n")
-
-    # Run the pipeline
+    # Run the pipeline (Docker build/check happens inside pipeline)
     try:
         result = run_pipeline(
             repo_root=repo_root,
