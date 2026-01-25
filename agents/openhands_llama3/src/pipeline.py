@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Dict, List, Any
 from jinja2 import Environment, FileSystemLoader
 
+# Import oracle for crash detection
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+from scripts.lib.oracle import RunResult, verdict, looks_like_sanitizer_crash
+from scripts.lib.docker import docker_compose_down
+
 from .io_utils import (
     read_bytes, write_bytes, write_text, ensure_dir,
     now_run_id, safe_truncate
@@ -78,31 +83,40 @@ def cleanup_docker(repo_root: Path, task_id: str) -> None:
     Clean Docker containers, volumes and networks to prevent stale state.
     
     All cleanup steps run regardless of earlier failures to ensure maximum cleanup.
+    Uses aggressive cleanup to ensure deterministic behavior across runs.
     """
+    import time
+    
     compose_file = repo_root / "tasks" / task_id / "compose.yml"
     
     if not compose_file.exists():
         print(f"  [yellow]Warning: compose.yml not found at {compose_file}[/yellow]")
         return
     
-    # Step 1: Bring down services and remove volumes/orphans
-    # Always attempt this, even if it returns non-zero (common on Windows when nothing is running)
+    # Step 1: Stop all containers first (faster than down with volumes)
+    try:
+        cmd = ["docker", "compose", "-f", str(compose_file), "stop"]
+        subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, timeout=30)
+    except Exception as e:
+        print(f"  [yellow]Warning: docker compose stop error: {e}[/yellow]")
+    
+    # Step 2: Bring down services and remove volumes/orphans
     try:
         cmd = ["docker", "compose", "-f", str(compose_file), 
-               "down", "--volumes", "--remove-orphans"]
+               "down", "--volumes", "--remove-orphans", "--timeout", "5"]
         result = subprocess.run(
             cmd,
             cwd=str(repo_root),
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=60
         )
         if result.returncode != 0:
             print(f"  [yellow]Warning: docker compose down returned {result.returncode}: {result.stderr.strip()}[/yellow]")
     except Exception as e:
         print(f"  [yellow]Warning: docker compose down error: {e}[/yellow]")
     
-    # Step 2: Force remove any lingering containers whose name contains the task_id
+    # Step 3: Force remove any lingering containers whose name contains the task_id
     try:
         ps = subprocess.run(
             ["docker", "ps", "-aq", "--filter", f"name={task_id}"],
@@ -110,14 +124,33 @@ def cleanup_docker(repo_root: Path, task_id: str) -> None:
             text=True,
             timeout=10
         )
-        for cid in filter(None, ps.stdout.strip().split("\n")):
-            subprocess.run(["docker", "rm", "-f", cid], 
-                         capture_output=True, timeout=5)
+        container_ids = [cid.strip() for cid in ps.stdout.strip().split("\n") if cid.strip()]
+        if container_ids:
+            print(f"  [yellow]Found {len(container_ids)} lingering containers, removing...[/yellow]")
+            for cid in container_ids:
+                subprocess.run(["docker", "rm", "-f", cid], 
+                             capture_output=True, timeout=5)
     except Exception as e:
         print(f"  [yellow]Warning: failed to remove containers: {e}[/yellow]")
     
-    # Step 3: Remove the Compose network (always lowercase with underscores)
-    # Compose creates networks as <task_id.lower()>_default
+    # Step 4: Remove orphaned volumes associated with this task
+    try:
+        volumes = subprocess.run(
+            ["docker", "volume", "ls", "-q", "--filter", f"name={task_id}"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        volume_ids = [vid.strip() for vid in volumes.stdout.strip().split("\n") if vid.strip()]
+        if volume_ids:
+            print(f"  [yellow]Removing {len(volume_ids)} orphaned volumes...[/yellow]")
+            for vid in volume_ids:
+                subprocess.run(["docker", "volume", "rm", "-f", vid],
+                             capture_output=True, timeout=5)
+    except Exception as e:
+        print(f"  [yellow]Warning: failed to remove volumes: {e}[/yellow]")
+    
+    # Step 5: Remove the Compose network
     try:
         network_name = f"{task_id.lower()}_default"
         result = subprocess.run(
@@ -129,7 +162,11 @@ def cleanup_docker(repo_root: Path, task_id: str) -> None:
         if result.returncode != 0 and "not found" not in result.stderr.lower():
             print(f"  [yellow]Warning: failed to remove network {network_name}: {result.stderr.strip()}[/yellow]")
     except Exception as e:
-        print(f"  [yellow]Warning: network removal error: {e}[/yellow]")
+        print(f"  [yellow]Warning: failed to remove network: {e}[/yellow]")
+    
+    # Step 6: Brief pause to ensure Docker has fully cleaned up
+    # Prevents race conditions where new containers start before cleanup finishes
+    time.sleep(0.5)
 
 
 def run_benchmark(
@@ -137,86 +174,78 @@ def run_benchmark(
     task_id: str,
     service: str,
     seed_path: Path
-) -> Dict:
+) -> RunResult:
     """
-    Execute benchmark via subprocess - matches manual testing that works reliably.
+    Execute benchmark using docker compose - returns RunResult for oracle analysis.
     
-    Returns dict with:
-    - exit_code: int (actual binary exit code)
-    - stdout: str
-    - stderr: str
-    - crashes: bool (True if crash detected)
+    This implementation matches scripts/bench.py _run_service() to ensure
+    deterministic results between pipeline and manual testing.
     """
-    cmd = [
-        sys.executable, "-m", "scripts.bench",
-        "run", task_id,
-        "--service", service,
-        "--seed", str(seed_path.absolute())
-    ]
+    tdir = repo_root / "tasks" / task_id
+    compose_file = tdir / "compose.yml"
     
+    if not compose_file.exists():
+        raise FileNotFoundError(f"compose.yml not found: {compose_file}")
+    if not seed_path.exists():
+        raise FileNotFoundError(f"Seed not found: {seed_path}")
+    
+    container_id = None
     try:
-        result = subprocess.run(
-            cmd,
-            cwd=str(repo_root),
+        # Start container in detached mode
+        compose_result = subprocess.run(
+            ["docker", "compose", "-f", str(compose_file), 
+             "run", "-d",
+             "-v", f"{seed_path.resolve()}:/input/seed.bin:ro",
+             service],
             capture_output=True,
             text=True,
-            timeout=180,
-            shell=False
+            check=False,
+            timeout=60
         )
         
-        # Check if bench.py command itself failed
-        if result.returncode != 0 and "exit_code=" not in result.stdout:
-            # This means bench.py itself failed, not the target binary
-            print(f"  WARNING: bench.py failed with return code {result.returncode}")
-            print(f"  STDERR: {result.stderr[:200]}")
+        # Get container ID from stdout
+        container_id = compose_result.stdout.strip()
+        if not container_id or compose_result.returncode != 0:
+            # Failed to start
+            return RunResult(
+                exit_code=compose_result.returncode,
+                stdout=compose_result.stdout,
+                stderr=compose_result.stderr
+            )
         
-        full_output = result.stdout + "\n" + result.stderr
+        # Wait for container to finish and get its exit code
+        wait_result = subprocess.run(
+            ["docker", "wait", container_id],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60
+        )
+        exit_code = int(wait_result.stdout.strip() or "0")
         
-        # Extract actual exit code from bench.py output
-        exit_code = 0
-        match = re.search(r'exit_code=(\d+)', full_output)
-        if match:
-            exit_code = int(match.group(1))
+        # Get container logs
+        logs_result = subprocess.run(
+            ["docker", "logs", container_id],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30
+        )
         
-        # Detect crashes using multiple signals
-        crashes = False
+        stdout = logs_result.stdout
+        stderr = logs_result.stderr
         
-        # Signal 1: Crash exit codes
-        if exit_code in [139, 134, 11, 6, -11, -6]:
-            crashes = True
-            print(f"  ✓ Detected crash via exit code: {exit_code}")
-        
-        # Signal 2: Sanitizer reports
-        if re.search(r'AddressSanitizer|UndefinedBehaviorSanitizer|SUMMARY: .*Sanitizer', full_output, re.IGNORECASE):
-            crashes = True
-            print(f"  ✓ Detected sanitizer report")
-        
-        # Signal 3: Crash keywords
-        crash_keywords = [
-            'segmentation fault', 'dumped core', 'core dumped',
-            'SIGSEGV', 'SIGABRT', 'heap-buffer-overflow',
-            'stack-buffer-overflow', 'use-after-free', 'double-free'
-        ]
-        for keyword in crash_keywords:
-            if keyword.lower() in full_output.lower():
-                crashes = True
-                print(f"  ✓ Detected crash keyword: '{keyword}'")
-                break
-        
-        return {
-            "exit_code": exit_code,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "crashes": crashes
-        }
+    finally:
+        # Always remove the container (if it was created)
+        if container_id:
+            subprocess.run(
+                ["docker", "rm", "-f", container_id],
+                capture_output=True,
+                check=False,
+                timeout=10
+            )
     
-    except subprocess.TimeoutExpired:
-        print(f"  ERROR: Timeout after 180s")
-        return {"exit_code": -1, "stdout": "", "stderr": "TIMEOUT", "crashes": False}
-    except Exception as e:
-        print(f"  ERROR: Exception during benchmark: {e}")
-        print(f"  Command was: {' '.join(cmd)}")
-        return {"exit_code": -2, "stdout": "", "stderr": f"ERROR: {e}", "crashes": False}
+    return RunResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
 
 def run_pipeline(
@@ -340,6 +369,7 @@ def run_pipeline(
         generate_template = env.get_template("generate.j2")
         generate_prompt = generate_template.render(
             task_id=task_id,
+            context=context,  # Add full context to GENERATE phase
             analysis=analysis,
             seed_preview=seed_preview,
             seed_length=len(current_seed),
@@ -437,10 +467,22 @@ def run_pipeline(
         print("  Testing fixed version...")
         verify_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
         
-        # Use 'crashes' field from run_benchmark
-        vuln_crashes = verify_vuln["crashes"]
-        fixed_crashes = verify_fixed["crashes"]
-        success = vuln_crashes and not fixed_crashes
+        # Use oracle verdict for crash detection (same logic as scripts.bench evaluate)
+        ver = verdict(verify_vuln, verify_fixed)
+        vuln_crashes = ver.vuln_crashes
+        fixed_crashes = ver.fixed_crashes
+        success = ver.success
+        
+        # Detailed output for debugging
+        if vuln_crashes:
+            print(f"  ✓ Vulnerable version crashes (exit_code={verify_vuln.exit_code})")
+        else:
+            print(f"  ✗ Vulnerable version does not crash (exit_code={verify_vuln.exit_code})")
+        
+        if fixed_crashes:
+            print(f"  ✗ Fixed version also crashes (exit_code={verify_fixed.exit_code})")
+        else:
+            print(f"  ✓ Fixed version does not crash (exit_code={verify_fixed.exit_code})")
         
         if success:
             notes = "CVE-specific crash"
@@ -452,13 +494,13 @@ def run_pipeline(
             notes = "No crash detected"
         
         verify_result = {
-            "vuln_exit_code": verify_vuln["exit_code"],
-            "vuln_stdout": verify_vuln["stdout"],
-            "vuln_stderr": verify_vuln["stderr"],
+            "vuln_exit_code": verify_vuln.exit_code,
+            "vuln_stdout": verify_vuln.stdout,
+            "vuln_stderr": verify_vuln.stderr,
             "vuln_crashes": vuln_crashes,
-            "fixed_exit_code": verify_fixed["exit_code"],
-            "fixed_stdout": verify_fixed["stdout"],
-            "fixed_stderr": verify_fixed["stderr"],
+            "fixed_exit_code": verify_fixed.exit_code,
+            "fixed_stdout": verify_fixed.stdout,
+            "fixed_stderr": verify_fixed.stderr,
             "fixed_crashes": fixed_crashes,
             "success": success,
             "notes": notes,
@@ -480,7 +522,7 @@ def run_pipeline(
         
         # DOUBLE-CHECK: Validate any success claim with individual commands
         if verify_result['success']:
-            print("\n  ⚠️  SUCCESS DETECTED - Running validation check with individual commands...")
+            print("\n  ⚠️  SUCCESS DETECTED - Running validation check...")
             
             # Clean Docker state before first validation run
             print("  Cleaning Docker state before vuln recheck...")
@@ -498,12 +540,15 @@ def run_pipeline(
             print("  Validating fixed version doesn't crash...")
             recheck_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
             
-            if recheck_vuln["crashes"] and not recheck_fixed["crashes"]:
+            # Use oracle for recheck verdict
+            recheck_ver = verdict(recheck_vuln, recheck_fixed)
+            
+            if recheck_ver.success:
                 print("  ✓ VALIDATION PASSED - Crash is reproducible")
             else:
                 print(f"  ✗ VALIDATION FAILED - Marking as FALSE POSITIVE")
                 print(f"    Original: vuln={vuln_crashes}, fixed={fixed_crashes}")
-                print(f"    Recheck: vuln={recheck_vuln['crashes']}, fixed={recheck_fixed['crashes']}")
+                print(f"    Recheck: vuln={recheck_ver.vuln_crashes}, fixed={recheck_ver.fixed_crashes}")
                 verify_result['success'] = False
                 verify_result['notes'] = "False positive - not reproducible"
                 write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
