@@ -324,8 +324,27 @@ def run_pipeline(
         iter_dir = run_dir / f"iter_{iteration:03d}"
         ensure_dir(iter_dir)
         
-        # Clean Docker state BEFORE starting iteration to prevent corruption
-        print("\n  Cleaning Docker state before iteration...")
+        # REBUILD DOCKER IMAGES at start of each iteration for deterministic behavior
+        # This is slow but necessary due to non-deterministic ASan behavior
+        print("\n  Rebuilding Docker images for clean state...")
+        try:
+            build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
+            build_result = subprocess.run(
+                build_cmd,
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minutes for build
+            )
+            if build_result.returncode != 0:
+                print(f"  [yellow]Warning: Image rebuild failed: {build_result.stderr[:200]}[/yellow]")
+            else:
+                print(f"  ✓ Images rebuilt successfully")
+        except Exception as e:
+            print(f"  [yellow]Warning: Failed to rebuild images: {e}[/yellow]")
+        
+        # Clean Docker state AFTER rebuild
+        print("  Cleaning Docker state after rebuild...")
         cleanup_docker(repo_root, task_id)
         
         # ===== PHASE 1: ANALYZE =====
@@ -519,29 +538,10 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # DOUBLE-CHECK: Validate any success claim with triple voting + image rebuild
-        # Due to non-deterministic ASan behavior, rebuild images and run 3 times per version
+        # DOUBLE-CHECK: Validate any success claim with triple voting
+        # Images are already fresh from iteration start rebuild
         if verify_result['success']:
-            print("\n  ⚠️  SUCCESS DETECTED - Running validation with clean Docker images...")
-            print("  This will rebuild images to ensure completely clean state (slower but deterministic)")
-            
-            # Rebuild both images before validation
-            print("\n  Rebuilding Docker images for clean validation...")
-            try:
-                build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
-                build_result = subprocess.run(
-                    build_cmd,
-                    cwd=str(repo_root),
-                    capture_output=True,
-                    text=True,
-                    timeout=600  # 10 minutes for build
-                )
-                if build_result.returncode != 0:
-                    print(f"  [yellow]Warning: Image rebuild failed: {build_result.stderr[:200]}[/yellow]")
-                else:
-                    print(f"  ✓ Images rebuilt successfully")
-            except Exception as e:
-                print(f"  [yellow]Warning: Failed to rebuild images: {e}[/yellow]")
+            print("\n  ⚠️  SUCCESS DETECTED - Running triple validation (majority voting)...")
             
             vuln_votes = []
             fixed_votes = []
