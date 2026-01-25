@@ -519,10 +519,29 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # DOUBLE-CHECK: Validate any success claim with triple voting
-        # Due to non-deterministic ASan behavior, run each test 3 times and use majority vote
+        # DOUBLE-CHECK: Validate any success claim with triple voting + image rebuild
+        # Due to non-deterministic ASan behavior, rebuild images and run 3 times per version
         if verify_result['success']:
-            print("\n  ⚠️  SUCCESS DETECTED - Running triple validation (majority voting)...")
+            print("\n  ⚠️  SUCCESS DETECTED - Running validation with clean Docker images...")
+            print("  This will rebuild images to ensure completely clean state (slower but deterministic)")
+            
+            # Rebuild both images before validation
+            print("\n  Rebuilding Docker images for clean validation...")
+            try:
+                build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
+                build_result = subprocess.run(
+                    build_cmd,
+                    cwd=str(repo_root),
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # 10 minutes for build
+                )
+                if build_result.returncode != 0:
+                    print(f"  [yellow]Warning: Image rebuild failed: {build_result.stderr[:200]}[/yellow]")
+                else:
+                    print(f"  ✓ Images rebuilt successfully")
+            except Exception as e:
+                print(f"  [yellow]Warning: Failed to rebuild images: {e}[/yellow]")
             
             vuln_votes = []
             fixed_votes = []
@@ -538,7 +557,19 @@ def run_pipeline(
                 recheck_vuln = run_benchmark(repo_root, task_id, service, seed_file)
                 vuln_crashes_now = looks_like_sanitizer_crash(recheck_vuln)
                 vuln_votes.append(vuln_crashes_now)
-                print(f"    Vuln result: {'CRASH' if vuln_crashes_now else 'no crash'} (exit_code={recheck_vuln.exit_code})")
+                
+                # Log detailed output for debugging
+                if vuln_crashes_now:
+                    # Check what triggered the detection
+                    combined = recheck_vuln.stdout + "\n" + recheck_vuln.stderr
+                    if "AddressSanitizer" in combined:
+                        print(f"    Vuln result: CRASH (exit_code={recheck_vuln.exit_code}) - ASan detected")
+                    elif "heap-buffer-overflow" in combined.lower():
+                        print(f"    Vuln result: CRASH (exit_code={recheck_vuln.exit_code}) - heap-buffer-overflow detected")
+                    else:
+                        print(f"    Vuln result: CRASH (exit_code={recheck_vuln.exit_code})")
+                else:
+                    print(f"    Vuln result: no crash (exit_code={recheck_vuln.exit_code})")
                 
                 # Test fixed version
                 print(f"    Cleaning Docker state...")
@@ -547,7 +578,11 @@ def run_pipeline(
                 recheck_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
                 fixed_crashes_now = looks_like_sanitizer_crash(recheck_fixed)
                 fixed_votes.append(fixed_crashes_now)
-                print(f"    Fixed result: {'CRASH' if fixed_crashes_now else 'no crash'} (exit_code={recheck_fixed.exit_code})")
+                
+                if fixed_crashes_now:
+                    print(f"    Fixed result: CRASH (exit_code={recheck_fixed.exit_code}) - UNEXPECTED!")
+                else:
+                    print(f"    Fixed result: no crash (exit_code={recheck_fixed.exit_code})")
             
             # Count votes (majority wins)
             vuln_crash_votes = sum(vuln_votes)
