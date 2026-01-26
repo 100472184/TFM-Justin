@@ -119,7 +119,14 @@ Propose 1-5 mutations to apply to the current seed. Consider:
 - For header corruption: {"op": "overwrite_range", "offset": 0, "hex": "00"}
 - For size field manipulation: Overwrite size fields in headers
 
-**CRITICAL: If context says "use ONLY truncate", do NOT add other operations!**
+**⚠️ SPECIAL NOTE FOR TAR VULNERABILITIES (CVE-2024-57970):**
+- This specific vulnerability requires ONLY simple truncation
+- Do NOT add overwrites, bit flips, or header modifications
+- Complex mutations corrupt TAR checksums → validation failures
+- Header corruption causes "inverted" results (fixed crashes, vuln doesn't)
+- Stick to: {"mutations": [{"op": "truncate", "new_len": <size>}]}
+
+**CRITICAL: If context mentions TAR or says "use ONLY truncate", do NOT add other operations!**
 Example for CVE-2024-57970:
 ```json
 {
