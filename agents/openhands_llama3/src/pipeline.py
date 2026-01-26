@@ -173,13 +173,17 @@ def run_benchmark(
     repo_root: Path,
     task_id: str,
     service: str,
-    seed_path: Path
+    seed_path: Path,
+    project_name: str = None
 ) -> RunResult:
     """
     Execute benchmark using docker compose with --rm for deterministic cleanup.
     
     Uses --rm instead of -d + manual rm to avoid orphaned containers and
     intermediate state. Directly captures stdout/stderr without needing logs.
+    
+    Args:
+        project_name: Optional project name for namespacing (prevents collisions)
     """
     tdir = repo_root / "tasks" / task_id
     compose_file = tdir / "compose.yml"
@@ -190,12 +194,20 @@ def run_benchmark(
         raise FileNotFoundError(f"Seed not found: {seed_path}")
     
     try:
+        # Build command with project namespacing
+        cmd = ["docker", "compose"]
+        if project_name:
+            cmd.extend(["-p", project_name])
+        cmd.extend([
+            "-f", str(compose_file), 
+            "run", "--rm", "--no-deps",
+            "-v", f"{seed_path.resolve()}:/input/seed.bin:ro",
+            service
+        ])
+        
         # Run container with --rm (auto-cleanup) and capture output directly
         compose_result = subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), 
-             "run", "--rm",
-             "-v", f"{seed_path.resolve()}:/input/seed.bin:ro",
-             service],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -210,7 +222,7 @@ def run_benchmark(
         
     except subprocess.TimeoutExpired:
         return RunResult(
-            exit_code=-1,
+            exit_code=124,  # Standard timeout exit code
             stdout="",
             stderr="Timeout: container did not finish in 15 seconds"
         )
@@ -223,6 +235,11 @@ def validate_tar_structure(seed_bytes: bytes, task_id: str) -> tuple[bool, str]:
     This is 100% local validation (no Docker) that strictly checks if the TAR
     can be parsed by Python's tarfile library. This is more reliable than
     using Docker which might be permissive with partially-valid TARs.
+    
+    Trade-off: For CVEs in parsers, this may reject seeds that libarchive
+    would accept (and could trigger crashes). We allow truncation/empty headers
+    but reject corruption (bad checksums). For CVEs needing invalid structures,
+    disable validation (level="L3") or adjust filtering logic.
     
     Returns:
         (is_valid, error_message)
@@ -357,16 +374,17 @@ def run_pipeline(
     
     compose_file = repo_root / "tasks" / task_id / "compose.yml"
     
-    # Step 1: Initial cleanup - remove any stale state from previous runs
-    print("\n  Step 1: Cleaning stale Docker state...")
+    # Step 1: Initial cleanup - remove project-specific build cache only
+    print("\n  Step 1: Cleaning project build cache...")
     try:
-        prune_cmd = ["docker", "system", "prune", "-af", "--volumes"]
+        # Only prune build cache (safer than global prune)
+        prune_cmd = ["docker", "builder", "prune", "-af"]
         subprocess.run(
             prune_cmd,
             cwd=str(repo_root),
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=60,
             check=False
         )
         print("  ✓ Cleanup complete")
@@ -610,16 +628,21 @@ def run_pipeline(
         # ===== PHASE 3: VERIFY =====
         print("\n→ VERIFY")
         
-        # No cleanup needed: --rm handles container removal automatically
-        # network_mode: none means no network state to clean
-        # Each run is completely isolated
+        # No cleanup needed between iterations:
+        # - --rm auto-removes containers after each run
+        # - network_mode: none means no network state
+        # - No volumes declared in compose.yml
+        # Each run is completely isolated and ephemeral
+        
+        # Project name for namespacing (prevents collisions with parallel runs)
+        project_name = f"{task_id.lower()}_{run_id}"
         
         # Test vulnerable and fixed (images already built and verified)
         print("  Testing vulnerable version...")
-        verify_vuln = run_benchmark(repo_root, task_id, service, seed_file)
+        verify_vuln = run_benchmark(repo_root, task_id, service, seed_file, project_name)
         
         print("  Testing fixed version...")
-        verify_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file)
+        verify_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file, project_name)
         
         # Use oracle verdict for crash detection (same logic as scripts.bench evaluate)
         ver = verdict(verify_vuln, verify_fixed)
@@ -632,8 +655,8 @@ def run_pipeline(
             print("  [cyan]Repro-check: Confirming crash (2x)...[/cyan]")
             
             # Re-run vulnerable twice
-            repro1 = run_benchmark(repo_root, task_id, service, seed_file)
-            repro2 = run_benchmark(repo_root, task_id, service, seed_file)
+            repro1 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
+            repro2 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
             
             repro1_ver = verdict(repro1, verify_fixed)
             repro2_ver = verdict(repro2, verify_fixed)
@@ -691,14 +714,10 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # NO VALIDATION: Trust the first VERIFY result since images are rebuilt each iteration
-        # Rationale: If we rebuild images at iteration start, the first test should be deterministic
-        # Any validation without rebuild could still show non-determinism, defeating the purpose
+        # Success indication: ephemeral containers (--rm) + repro-check reduce flakiness
+        # Images built once at pipeline start, reused across iterations for speed
         if verify_result['success']:
-            print("  ✓ SUCCESS CONFIRMED - Images were rebuilt, result is trusted")
-        
-        print("  Cleaning Docker containers...")
-        cleanup_docker(repo_root, task_id)
+            print("  ✓ SUCCESS CONFIRMED - Repro-check verified crash is reproducible")
         
         # Add to history with complete information for next iteration
         verify_history.append({
@@ -712,8 +731,8 @@ def run_pipeline(
             "mutations_applied": mutations if mutations else [],
             "mutation_success": mutation_success,
             "mutation_error": mutation_error,
-            "vuln_stderr_preview": safe_truncate(verify_result["vuln_stdout"], 500),
-            "fixed_stderr_preview": safe_truncate(verify_result["fixed_stdout"], 500)
+            "vuln_stderr_preview": safe_truncate(verify_result["vuln_stderr"], 500),
+            "fixed_stderr_preview": safe_truncate(verify_result["fixed_stderr"], 500)
         })
         
         # Check success - now based on CVE-specific crash
