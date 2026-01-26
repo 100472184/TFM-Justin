@@ -22,62 +22,6 @@ from .mutations import apply_mutations
 from .openhands_client import OpenHandsLLMClient
 
 
-def detect_success_signal(stdout: str, stderr: str, exit_code: int) -> bool:
-    """
-    Detect if execution shows crash/sanitizer signals.
-    
-    Success indicators:
-    - Crash exit codes (139=SIGSEGV, 134=SIGABRT)
-    - Sanitizer keywords in stderr/stdout
-    - Core dumps, segmentation faults
-    """
-    # Keywords that indicate success (vulnerability triggered)
-    CRASH_KEYWORDS = [
-        "addresssanitizer",           # ASan
-        "undefinedbehaviorsanitizer", # UBSan
-        "heap-buffer-overflow",
-        "stack-buffer-overflow",
-        "heap-use-after-free",
-        "segv",
-        "sigsegv",
-        "sigabrt",
-        "double-free",
-        "use-after-free",
-        "out-of-bounds",
-        "asan:",
-        "ubsan:",
-        "segmentation fault",
-        "dumped core",
-        "core dumped",
-        "aborted",
-        "summary: addresssanitizer",  # ASan summary
-        "summary: undefinedbehavior", # UBSan summary
-    ]
-    
-    combined_output = (stdout + "\n" + stderr).lower()
-    
-    # Check for keywords (all lowercase now)
-    for keyword in CRASH_KEYWORDS:
-        if keyword in combined_output:
-            print(f"[cyan]  ✓ Detected crash keyword: '{keyword}'[/cyan]")
-            return True
-    
-    # Check exit codes that indicate crash
-    # 139 = 128 + 11 (SIGSEGV)
-    # 134 = 128 + 6 (SIGABRT)
-    CRASH_EXIT_CODES = [139, 134, -11, -6, 11, 6]
-    if exit_code in CRASH_EXIT_CODES:
-        print(f"[cyan]  ✓ Detected crash exit code: {exit_code}[/cyan]")
-        return True
-    # 134 = 128 + 6 (SIGABRT)
-    if exit_code in [139, 134, -11, -6]:
-        return True
-    
-    # Non-zero exit code might indicate crash
-    # But be conservative: only consider it success if keywords found
-    return False
-
-
 def cleanup_docker(repo_root: Path, task_id: str) -> None:
     """
     Clean Docker containers, volumes and networks to prevent stale state.
@@ -292,7 +236,9 @@ def validate_tar_structure(seed_bytes: bytes, task_id: str) -> tuple[bool, str]:
         return True, ""
     except Exception as e:
         # Unexpected error - be permissive to avoid false rejections
-        return True, f"Warning: validation error {str(e)[:100]}"
+        warning_msg = f"Warning: validation error {str(e)[:100]}"
+        print(f"  [yellow]{warning_msg}[/yellow]")
+        return True, warning_msg
     finally:
         try:
             Path(tmp_path).unlink()
@@ -374,25 +320,8 @@ def run_pipeline(
     
     compose_file = repo_root / "tasks" / task_id / "compose.yml"
     
-    # Step 1: Initial cleanup - remove project-specific build cache only
-    print("\n  Step 1: Cleaning project build cache...")
-    try:
-        # Only prune build cache (safer than global prune)
-        prune_cmd = ["docker", "builder", "prune", "-af"]
-        subprocess.run(
-            prune_cmd,
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False
-        )
-        print("  ✓ Cleanup complete")
-    except Exception as e:
-        print(f"  [yellow]Warning: Initial cleanup failed: {e}[/yellow]")
-    
-    # Step 2: Build images from scratch (bench.py already uses --no-cache)
-    print("\n  Step 2: Building Docker images (no cache)...")
+    # Step 1: Build images from scratch (bench.py uses --no-cache --pull)
+    print("\n  Step 1: Building Docker images (no cache)...")
     try:
         build_cmd = [sys.executable, "-m", "scripts.bench", "build", task_id]
         build_result = subprocess.run(
@@ -411,8 +340,8 @@ def run_pipeline(
         print(f"  [red]ERROR: Build exception: {e}[/red]")
         return {"success": False, "iteration": 0, "run_dir": run_dir, "error": str(e)}
     
-    # Step 3: Verify images are ready
-    print("\n  Step 3: Verifying images are ready...")
+    # Step 2: Verify images are ready
+    print("\n  Step 2: Verifying images are ready...")
     try:
         images_ready, versions = verify_task_images_ready(
             task_id,
@@ -635,7 +564,10 @@ def run_pipeline(
         # Each run is completely isolated and ephemeral
         
         # Project name for namespacing (prevents collisions with parallel runs)
-        project_name = f"{task_id.lower()}_{run_id}"
+        # Sanitize: lowercase, replace invalid chars, limit length
+        import re
+        project_name_raw = f"{task_id}_{run_id}"
+        project_name = re.sub(r'[^a-z0-9_-]', '_', project_name_raw.lower())[:60]
         
         # Test vulnerable and fixed (images already built and verified)
         print("  Testing vulnerable version...")
@@ -704,11 +636,12 @@ def run_pipeline(
         
         write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
         
-        # Save command
-        cmd_vuln = f"python -m scripts.bench run {task_id} --service target-vuln --seed {seed_file}"
-        cmd_fixed = f"python -m scripts.bench run {task_id} --service target-fixed --seed {seed_file}"
+        # Save command for reproducibility (reflects actual execution with -p)
+        compose_path = repo_root / "tasks" / task_id / "compose.yml"
+        cmd_vuln = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps -v {seed_file.resolve()}:/input/seed.bin:ro target-vuln"
+        cmd_fixed = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps -v {seed_file.resolve()}:/input/seed.bin:ro target-fixed"
         cmd_eval = f"python -m scripts.bench evaluate {task_id} --seed {seed_file}"
-        write_text(iter_dir / "command.txt", f"{cmd_vuln}\n\n# Fixed version:\n{cmd_fixed}\n\n# Evaluate:\n{cmd_eval}")
+        write_text(iter_dir / "command.txt", f"# Vulnerable version (as executed):\n{cmd_vuln}\n\n# Fixed version:\n{cmd_fixed}\n\n# Evaluate (simplified):\n{cmd_eval}")
         
         print(f"  Vulnerable: exit_code={verify_result['vuln_exit_code']}, crashes={verify_result['vuln_crashes']}")
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
