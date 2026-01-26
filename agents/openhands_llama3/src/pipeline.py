@@ -176,10 +176,10 @@ def run_benchmark(
     seed_path: Path
 ) -> RunResult:
     """
-    Execute benchmark using docker compose - returns RunResult for oracle analysis.
+    Execute benchmark using docker compose with --rm for deterministic cleanup.
     
-    This implementation matches scripts/bench.py _run_service() to ensure
-    deterministic results between pipeline and manual testing.
+    Uses --rm instead of -d + manual rm to avoid orphaned containers and
+    intermediate state. Directly captures stdout/stderr without needing logs.
     """
     tdir = repo_root / "tasks" / task_id
     compose_file = tdir / "compose.yml"
@@ -189,63 +189,31 @@ def run_benchmark(
     if not seed_path.exists():
         raise FileNotFoundError(f"Seed not found: {seed_path}")
     
-    container_id = None
     try:
-        # Start container in detached mode
+        # Run container with --rm (auto-cleanup) and capture output directly
         compose_result = subprocess.run(
             ["docker", "compose", "-f", str(compose_file), 
-             "run", "-d",
+             "run", "--rm",
              "-v", f"{seed_path.resolve()}:/input/seed.bin:ro",
              service],
             capture_output=True,
             text=True,
             check=False,
-            timeout=60
+            timeout=15
         )
         
-        # Get container ID from stdout
-        container_id = compose_result.stdout.strip()
-        if not container_id or compose_result.returncode != 0:
-            # Failed to start
-            return RunResult(
-                exit_code=compose_result.returncode,
-                stdout=compose_result.stdout,
-                stderr=compose_result.stderr
-            )
-        
-        # Wait for container to finish and get its exit code
-        wait_result = subprocess.run(
-            ["docker", "wait", container_id],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60
-        )
-        exit_code = int(wait_result.stdout.strip() or "0")
-        
-        # Get container logs
-        logs_result = subprocess.run(
-            ["docker", "logs", container_id],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30
+        return RunResult(
+            exit_code=compose_result.returncode,
+            stdout=compose_result.stdout,
+            stderr=compose_result.stderr
         )
         
-        stdout = logs_result.stdout
-        stderr = logs_result.stderr
-        
-    finally:
-        # Always remove the container (if it was created)
-        if container_id:
-            subprocess.run(
-                ["docker", "rm", "-f", container_id],
-                capture_output=True,
-                check=False,
-                timeout=10
-            )
-    
-    return RunResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
+    except subprocess.TimeoutExpired:
+        return RunResult(
+            exit_code=-1,
+            stdout="",
+            stderr="Timeout: container did not finish in 15 seconds"
+        )
 
 
 def validate_tar_structure(seed_bytes: bytes, task_id: str) -> tuple[bool, str]:
@@ -642,20 +610,9 @@ def run_pipeline(
         # ===== PHASE 3: VERIFY =====
         print("\n→ VERIFY")
         
-        # Lightweight cleanup: only remove volumes and network (NOT images)
-        # Images were built once at pipeline start and are reused across iterations
-        try:
-            down_cmd = ["docker", "compose", "-f", str(compose_file), "down", "--volumes"]
-            subprocess.run(
-                down_cmd,
-                cwd=str(repo_root),
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False
-            )
-        except Exception as e:
-            print(f"  [yellow]Warning: Cleanup failed: {e}[/yellow]")
+        # No cleanup needed: --rm handles container removal automatically
+        # network_mode: none means no network state to clean
+        # Each run is completely isolated
         
         # Test vulnerable and fixed (images already built and verified)
         print("  Testing vulnerable version...")
