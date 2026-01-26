@@ -56,6 +56,14 @@ Iteration {{ result.iteration }}:
 - ❌ MUTATION ERROR: {{ result.mutation_error }}
 - Mutations proposed: {{ result.mutations_applied | tojson }}
 - THIS MUTATION FAILED - DO NOT REPEAT THE SAME MISTAKE
+{% if "bad checksum" in result.mutation_error or "Corrupted TAR" in result.mutation_error %}
+- **⚠️ CHECKSUM ERROR MEANS:** You used operations that corrupt TAR headers (overwrite, flip_bit)
+- **FIX:** Use ONLY truncate operation for this CVE: {"op": "truncate", "new_len": <size>}
+{% endif %}
+{% if result.notes == "Only fixed crashes (inverted)" %}
+- **⚠️ INVERTED RESULT MEANS:** Your mutation corrupted headers, making fixed version crash too
+- **FIX:** Use ONLY truncate operation without any overwrites or modifications
+{% endif %}
 {% else %}
 - Mutations: {{ result.mutations_applied | tojson }}
 - Mutation applied: {{ result.mutation_success }}
