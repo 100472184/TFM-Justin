@@ -22,11 +22,17 @@ You are analyzing a CVE vulnerability for academic security research.
 **Previous Verification Results:**
 {% for result in verify_history %}
 Iteration {{ result.iteration }}:
+- Mutations: {{ result.mutations_applied | tojson if result.mutations_applied else 'none' }}
+- Mutation success: {{ result.mutation_success }}
+{% if result.mutation_error %}
+- ⚠️ Mutation error: {{ result.mutation_error }}
+{% endif %}
 - Vulnerable: exit_code={{ result.vuln_exit_code }}, crashes={{ result.vuln_crashes }}
 - Fixed: exit_code={{ result.fixed_exit_code }}, crashes={{ result.fixed_crashes }}
 - Success: {{ result.success }} ({{ result.notes }})
-- Mutations applied: {{ result.mutations_applied | length }} operations
-- Output preview: {{ result.vuln_stderr_preview }}
+{% if result.vuln_stderr_preview %}
+- Output preview: {{ result.vuln_stderr_preview[:200] }}
+{% endif %}
 
 {% endfor %}
 {% endif %}
