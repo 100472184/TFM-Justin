@@ -356,7 +356,16 @@ def run_pipeline(
                 user_prompt=generate_prompt
             )
             
-            mutations = generation.get("mutations", [])
+            # Handle both object and array responses
+            if isinstance(generation, list):
+                # LLM returned array directly instead of object
+                mutations = generation
+                print(f"  [yellow]Warning: LLM returned array instead of object, using as mutations[/yellow]")
+            elif isinstance(generation, dict):
+                mutations = generation.get("mutations", [])
+            else:
+                mutations = []
+                print(f"  [red]Warning: Unexpected generation type: {type(generation)}[/red]")
             
             if not mutations:
                 mutation_error = "No mutations proposed by LLM"
@@ -406,13 +415,28 @@ def run_pipeline(
             break
         
         # Save generation result (including failed attempts)
-        generation_result = generation.copy() if generation else {}
+        generation_result = {}
+        if isinstance(generation, dict):
+            generation_result = generation.copy()
+        elif isinstance(generation, list):
+            # LLM returned array, wrap it
+            generation_result = {
+                "mutations": generation,
+                "rationale": "LLM returned array directly"
+            }
+        
         if failed_attempts:
             generation_result["failed_attempts"] = failed_attempts
             generation_result["total_attempts"] = len(failed_attempts) + (1 if mutation_success else 0)
         
         write_text(iter_dir / "generate.json", json.dumps(generation_result, indent=2))
-        print(f"  Rationale: {generation.get('rationale', 'N/A')[:100]}...")
+        
+        # Get rationale safely
+        if isinstance(generation, dict):
+            rationale = generation.get('rationale', 'N/A')
+        else:
+            rationale = 'N/A (array response)'
+        print(f"  Rationale: {rationale[:100]}...")
         
         # Check if we exhausted all attempts
         if not mutation_success:
