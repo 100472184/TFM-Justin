@@ -73,6 +73,14 @@ class OpenHandsLLMClient:
             try:
                 # Call LiteLLM
                 import litellm
+                import time
+                
+                # Add delay between retries (exponential backoff)
+                if attempt > 0:
+                    delay = 2 ** attempt  # 2s, 4s, 8s...
+                    print(f"  [yellow]Waiting {delay}s before retry...[/yellow]")
+                    time.sleep(delay)
+                
                 response = litellm.completion(
                     messages=messages,
                     **self.llm_kwargs
@@ -80,6 +88,14 @@ class OpenHandsLLMClient:
                 
                 # Extract content from response
                 content = response.choices[0].message.content
+                
+                # Debug: log empty responses
+                if not content or content.strip() == "":
+                    print(f"  [red]Warning: Empty response from LLM (attempt {attempt + 1}/{max_retries + 1})[/red]")
+                    if attempt < max_retries:
+                        continue
+                    else:
+                        raise RuntimeError("LLM returned empty response after all retries")
                 
                 # Try to parse JSON with aggressive cleaning
                 content = content.strip()
