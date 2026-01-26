@@ -50,7 +50,7 @@ class OpenHandsLLMClient:
         schema_name: str,
         system_prompt: str,
         user_prompt: str,
-        max_retries: int = 1
+        max_retries: int = 2  # Increased from 1 to 2
     ) -> Dict:
         """
         Get JSON completion from LLM.
@@ -131,6 +131,10 @@ class OpenHandsLLMClient:
                 return json.loads(content)
             
             except json.JSONDecodeError as e:
+                # Log the problematic JSON for debugging
+                print(f"  [red]JSON parse error: {str(e)}[/red]")
+                print(f"  [yellow]Problematic JSON (first 500 chars): {content[:500]}[/yellow]")
+                
                 if attempt < max_retries:
                     # Try to repair JSON
                     repair_prompt = (
@@ -146,5 +150,6 @@ class OpenHandsLLMClient:
                 else:
                     raise RuntimeError(
                         f"Failed to parse JSON response after {max_retries + 1} attempts. "
-                        f"Last error: {str(e)}"
+                        f"Last error: {str(e)}\n"
+                        f"Problematic content: {content[:500]}"
                     ) from e
