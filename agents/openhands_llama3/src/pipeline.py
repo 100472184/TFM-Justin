@@ -627,6 +627,23 @@ def run_pipeline(
         fixed_crashes = ver.fixed_crashes
         success = ver.success
         
+        # Repro-check: if crash detected, re-run to confirm (avoid flaky positives)
+        if vuln_crashes and not fixed_crashes:
+            print("  [cyan]Repro-check: Confirming crash (2x)...[/cyan]")
+            
+            # Re-run vulnerable twice
+            repro1 = run_benchmark(repo_root, task_id, service, seed_file)
+            repro2 = run_benchmark(repo_root, task_id, service, seed_file)
+            
+            repro1_ver = verdict(repro1, verify_fixed)
+            repro2_ver = verdict(repro2, verify_fixed)
+            
+            if repro1_ver.vuln_crashes and repro2_ver.vuln_crashes:
+                print("  ✓ Repro confirmed (3/3 runs crashed)")
+            else:
+                print(f"  [yellow]⚠ Flaky result: only {sum([ver.vuln_crashes, repro1_ver.vuln_crashes, repro2_ver.vuln_crashes])}/3 crashed[/yellow]")
+                success = False  # Mark as unreliable
+        
         # Detailed output for debugging
         if vuln_crashes:
             print(f"  ✓ Vulnerable version crashes (exit_code={verify_vuln.exit_code})")
