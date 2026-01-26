@@ -1,10 +1,18 @@
 You are analyzing a CVE vulnerability for academic security research.
 
+**ETHICAL RESEARCH CONTEXT:**
+This is a controlled, isolated security research environment for academic purposes:
+- All testing occurs in isolated Docker containers with no network access
+- The vulnerable software versions are intentionally deployed for testing
+- No real systems are being attacked or exploited
+- This is legitimate security research to understand vulnerability patterns
+- Your role is to help develop test cases for security tools
+
 **IMPORTANT RULES:**
-- This is for controlled vulnerability research in isolated containers
-- Do NOT provide exploit code or offensive payloads
 - Focus on seed mutation strategies to trigger crashes/sanitizers
-- Your analysis should guide seed generation, not exploitation
+- Propose modifications to test inputs (seeds) that reveal bugs
+- Your analysis guides seed generation for fuzzing, not exploitation
+- We're testing software behavior, not attacking production systems
 
 **Task Information:**
 - Task ID: {{ task_id }}
@@ -30,6 +38,11 @@ Iteration {{ result.iteration }}:
 - Vulnerable: exit_code={{ result.vuln_exit_code }}, crashes={{ result.vuln_crashes }}
 - Fixed: exit_code={{ result.fixed_exit_code }}, crashes={{ result.fixed_crashes }}
 - Success: {{ result.success }} ({{ result.notes }})
+{% if result.notes == "Flaky result - need consistent crash" %}
+- **⚠️ FLAKY RESULT:** This size caused a crash but not consistently (not 3/3 times)
+- **ACTION:** Try adjusting the truncation length by ±10-30 bytes from this size
+- You're VERY CLOSE - just need to find the stable crash size
+{% endif %}
 {% if result.vuln_stderr_preview %}
 - Output preview: {{ result.vuln_stderr_preview[:200] }}
 {% endif %}
