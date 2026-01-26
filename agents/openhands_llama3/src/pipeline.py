@@ -22,97 +22,6 @@ from .mutations import apply_mutations
 from .openhands_client import OpenHandsLLMClient
 
 
-def cleanup_docker(repo_root: Path, task_id: str) -> None:
-    """
-    Clean Docker containers, volumes and networks to prevent stale state.
-    
-    All cleanup steps run regardless of earlier failures to ensure maximum cleanup.
-    Uses aggressive cleanup to ensure deterministic behavior across runs.
-    """
-    import time
-    
-    compose_file = repo_root / "tasks" / task_id / "compose.yml"
-    
-    if not compose_file.exists():
-        print(f"  [yellow]Warning: compose.yml not found at {compose_file}[/yellow]")
-        return
-    
-    # Step 1: Stop all containers first (faster than down with volumes)
-    try:
-        cmd = ["docker", "compose", "-f", str(compose_file), "stop"]
-        subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, timeout=30)
-    except Exception as e:
-        print(f"  [yellow]Warning: docker compose stop error: {e}[/yellow]")
-    
-    # Step 2: Bring down services and remove volumes/orphans
-    try:
-        cmd = ["docker", "compose", "-f", str(compose_file), 
-               "down", "--volumes", "--remove-orphans", "--timeout", "5"]
-        result = subprocess.run(
-            cmd,
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        if result.returncode != 0:
-            print(f"  [yellow]Warning: docker compose down returned {result.returncode}: {result.stderr.strip()}[/yellow]")
-    except Exception as e:
-        print(f"  [yellow]Warning: docker compose down error: {e}[/yellow]")
-    
-    # Step 3: Force remove any lingering containers whose name contains the task_id
-    try:
-        ps = subprocess.run(
-            ["docker", "ps", "-aq", "--filter", f"name={task_id}"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        container_ids = [cid.strip() for cid in ps.stdout.strip().split("\n") if cid.strip()]
-        if container_ids:
-            print(f"  [yellow]Found {len(container_ids)} lingering containers, removing...[/yellow]")
-            for cid in container_ids:
-                subprocess.run(["docker", "rm", "-f", cid], 
-                             capture_output=True, timeout=5)
-    except Exception as e:
-        print(f"  [yellow]Warning: failed to remove containers: {e}[/yellow]")
-    
-    # Step 4: Remove orphaned volumes associated with this task
-    try:
-        volumes = subprocess.run(
-            ["docker", "volume", "ls", "-q", "--filter", f"name={task_id}"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        volume_ids = [vid.strip() for vid in volumes.stdout.strip().split("\n") if vid.strip()]
-        if volume_ids:
-            print(f"  [yellow]Removing {len(volume_ids)} orphaned volumes...[/yellow]")
-            for vid in volume_ids:
-                subprocess.run(["docker", "volume", "rm", "-f", vid],
-                             capture_output=True, timeout=5)
-    except Exception as e:
-        print(f"  [yellow]Warning: failed to remove volumes: {e}[/yellow]")
-    
-    # Step 5: Remove the Compose network
-    try:
-        network_name = f"{task_id.lower()}_default"
-        result = subprocess.run(
-            ["docker", "network", "rm", network_name],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        if result.returncode != 0 and "not found" not in result.stderr.lower():
-            print(f"  [yellow]Warning: failed to remove network {network_name}: {result.stderr.strip()}[/yellow]")
-    except Exception as e:
-        print(f"  [yellow]Warning: failed to remove network: {e}[/yellow]")
-    
-    # Step 6: Brief pause to ensure Docker has fully cleaned up
-    # Prevents race conditions where new containers start before cleanup finishes
-    time.sleep(0.5)
-
-
 def run_benchmark(
     repo_root: Path,
     task_id: str,
@@ -144,7 +53,7 @@ def run_benchmark(
             cmd.extend(["-p", project_name])
         cmd.extend([
             "-f", str(compose_file), 
-            "run", "--rm", "--no-deps",
+            "run", "--rm", "--no-deps", "--pull=never",
             "-v", f"{seed_path.resolve()}:/input/seed.bin:ro",
             service
         ])
@@ -636,12 +545,13 @@ def run_pipeline(
         
         write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
         
-        # Save command for reproducibility (reflects actual execution with -p)
+        # Save command for reproducibility (reflects actual execution)
         compose_path = repo_root / "tasks" / task_id / "compose.yml"
-        cmd_vuln = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps -v {seed_file.resolve()}:/input/seed.bin:ro target-vuln"
-        cmd_fixed = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps -v {seed_file.resolve()}:/input/seed.bin:ro target-fixed"
+        repro_header = f"# Run ID: {run_id}\n# Project: {project_name}\n# Iteration: {iteration}\n\n"
+        cmd_vuln = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never -v {seed_file.resolve()}:/input/seed.bin:ro target-vuln"
+        cmd_fixed = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never -v {seed_file.resolve()}:/input/seed.bin:ro target-fixed"
         cmd_eval = f"python -m scripts.bench evaluate {task_id} --seed {seed_file}"
-        write_text(iter_dir / "command.txt", f"# Vulnerable version (as executed):\n{cmd_vuln}\n\n# Fixed version:\n{cmd_fixed}\n\n# Evaluate (simplified):\n{cmd_eval}")
+        write_text(iter_dir / "command.txt", f"{repro_header}# Vulnerable version (exact command):\n{cmd_vuln}\n\n# Fixed version:\n{cmd_fixed}\n\n# Evaluate (simplified):\n{cmd_eval}")
         
         print(f"  Vulnerable: exit_code={verify_result['vuln_exit_code']}, crashes={verify_result['vuln_crashes']}")
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
