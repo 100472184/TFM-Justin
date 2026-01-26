@@ -254,7 +254,7 @@ def run_pipeline(
     try:
         images_ready, versions = verify_task_images_ready(
             task_id,
-            max_attempts=3,
+            max_attempts=15,
             retry_delay=2.0,
             verbose=True
         )
