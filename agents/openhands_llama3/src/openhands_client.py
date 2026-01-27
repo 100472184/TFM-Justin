@@ -39,6 +39,15 @@ class OpenHandsLLMClient:
             if self.base_url:
                 self.llm_kwargs["api_base"] = self.base_url
             
+            # Debug: log effective LLM configuration (helps validate LLM_BASE_URL usage)
+            try:
+                # Avoid leaking large secrets in logs by masking api_key if present
+                logged_kwargs = dict(self.llm_kwargs)
+                if "api_key" in logged_kwargs and logged_kwargs["api_key"]:
+                    logged_kwargs["api_key"] = "<redacted>"
+                print(f"LLM client config: {logged_kwargs}")
+            except Exception:
+                pass
         except ImportError as e:
             raise RuntimeError(
                 "Failed to import litellm. "
@@ -81,14 +90,35 @@ class OpenHandsLLMClient:
                     print(f"  Waiting {delay}s before retry...")
                     time.sleep(delay)
                 
+                # Debug: log the kwargs used for the call
+                try:
+                    kw_preview = dict(self.llm_kwargs)
+                    if "api_key" in kw_preview and kw_preview["api_key"]:
+                        kw_preview["api_key"] = "<redacted>"
+                    print(f"  Calling LLM with kwargs: {kw_preview}")
+                except Exception:
+                    pass
+
                 response = litellm.completion(
                     messages=messages,
                     **self.llm_kwargs
                 )
+
+                # Debug: log raw response object for troubleshooting JSON issues
+                try:
+                    print(f"  Raw LLM response: {repr(response)[:1000]}")
+                except Exception:
+                    pass
                 
                 # Extract content from response
                 content = response.choices[0].message.content
-                
+
+                # Debug: log raw content preview
+                try:
+                    print(f"  Raw LLM content (first 1000 chars): {content[:1000]!s}")
+                except Exception:
+                    pass
+
                 # Debug: log empty responses
                 if not content or content.strip() == "":
                     print(f"  Warning: Empty response from LLM (attempt {attempt + 1}/{max_retries + 1})")
