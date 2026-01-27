@@ -75,36 +75,98 @@ git push
 git push -u origin main
 ```
 
-### 5. Traer Cambios de Windows
+### 5. Traer Cambios de Windows (Pull)
 
 ```bash
-# Si hiciste cambios en Windows y quieres traerlos a Kali
+# Antes de empezar a trabajar, SIEMPRE haz pull
+cd ~/TFM-Justin
 git pull
 
-# Si hay conflictos, Git te lo dirá
-# Resuelve conflictos editando archivos y luego:
+# Si hiciste commits en Windows, aparecerá:
+# "Updating abc123..def456
+#  Fast-forward
+#  file1.py | 10 +++++++
+#  file2.py | 5 ++-"
+
+# Si no hay cambios:
+# "Already up to date."
+
+# Si hay conflictos, Git te lo dirá:
+# "CONFLICT (content): Merge conflict in file.py"
+# Resuelve conflictos editando archivos (busca <<<<<<, ======, >>>>>>)
+# Luego:
 git add .
 git commit -m "Merge changes from Windows"
+git push
+```
+
+### Workflow Kali ↔ Windows
+
+**Siempre antes de trabajar en Kali:**
+```bash
+cd ~/TFM-Justin
+git pull  # Traer últimos cambios de Windows
+```
+
+**Después de trabajar en Kali:**
+```bash
+git add .
+git commit -m "Changes from Kali"
+git push  # Subir a GitHub
+```
+
+**Después, en Windows:**
+```powershell
+cd D:\JustainoTitaino\TFM-Justin
+git pull  # Traer cambios de Kali
 ```
 
 ---
 
 ## Workflow Completo (Típico)
 
+### En Kali (al empezar)
+
 ```bash
 cd ~/TFM-Justin
 
-# 1. Ver qué cambió
+# PRIMERO: Traer cambios de Windows
+git pull
+
+# Ver qué hay
 git status
+
+# Trabajar... hacer cambios...
+
+# Ver cambios
 git diff
 
-# 2. Agregar cambios
+# Agregar cambios
 git add .
 
-# 3. Commit
+# Commit
 git commit -m "Test L2 with ASLR disabled in Kali"
 
-# 4. Push a GitHub
+# Push a GitHub
+git push
+```
+
+### En Windows (al empezar)
+
+```powershell
+cd D:\JustainoTitaino\TFM-Justin
+
+# PRIMERO: Traer cambios de Kali
+git pull
+
+# Ver estado
+git status
+
+# Trabajar... hacer cambios...
+
+# Agregar, commit, push
+git add .
+git commit -m "Update from Windows"
 git push
 ```
 
@@ -209,8 +271,8 @@ __pycache__/
 | Ver diferencias | `git diff` |
 | Agregar todo | `git add .` |
 | Commit | `git commit -m "mensaje"` |
+| **Traer cambios** | **`git pull`** |
 | Subir a GitHub | `git push` |
-| Traer de GitHub | `git pull` |
 | Ver historial | `git log --oneline` |
 | Deshacer cambios | `git reset --hard HEAD` |
 
