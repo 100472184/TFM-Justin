@@ -516,30 +516,25 @@ def run_pipeline(
         success = ver.success
         
         # Repro-check: if crash detected, re-run to confirm (avoid flaky positives)
-        # Accept 3/5 crashes due to ASLR/heap non-determinism in CVE-2024-57970
+        # With setarch -R disabling ASLR, crashes should be 100% deterministic
         if vuln_crashes and not fixed_crashes:
-            print("  [cyan]Repro-check: Confirming crash (4x more)...[/cyan]")
+            print("  [cyan]Repro-check: Confirming crash (2x more)...[/cyan]")
             
-            # Re-run vulnerable 4 times (5 total runs)
+            # Re-run vulnerable 2 times (3 total runs with setarch -R)
             repro1 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
             repro2 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
-            repro3 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
-            repro4 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
             
             repro1_ver = verdict(repro1, verify_fixed)
             repro2_ver = verdict(repro2, verify_fixed)
-            repro3_ver = verdict(repro3, verify_fixed)
-            repro4_ver = verdict(repro4, verify_fixed)
             
-            crash_count = sum([ver.vuln_crashes, repro1_ver.vuln_crashes, repro2_ver.vuln_crashes, 
-                              repro3_ver.vuln_crashes, repro4_ver.vuln_crashes])
+            crash_count = sum([ver.vuln_crashes, repro1_ver.vuln_crashes, repro2_ver.vuln_crashes])
             
             if crash_count >= 3:
-                print(f"  ✓ Repro confirmed ({crash_count}/5 runs crashed - acceptable due to ASLR)")
-                success = True  # Accept 3/5 or better
+                print(f"  ✓ Repro confirmed ({crash_count}/3 runs crashed - deterministic)")
+                success = True  # Require 3/3 with ASLR disabled
             else:
-                print(f"  [yellow]⚠ Flaky result: only {crash_count}/5 crashed (need at least 3/5)[/yellow]")
-                success = False  # Reject if less than 3/5
+                print(f"  [yellow]⚠ Non-deterministic result: only {crash_count}/3 crashed (expected 3/3)[/yellow]")
+                success = False  # Reject if not 3/3
         
         # Detailed output for debugging
         if vuln_crashes:
@@ -553,7 +548,7 @@ def run_pipeline(
             print(f"  ✓ Fixed version does not crash (exit_code={verify_fixed.exit_code})")
         
         if success:
-            notes = f"CVE-specific crash (confirmed {crash_count if 'crash_count' in locals() else 1}/1 or {crash_count if 'crash_count' in locals() else '?'}/5)"
+            notes = f"CVE-specific crash (confirmed {crash_count if 'crash_count' in locals() else 1}/{3 if 'crash_count' in locals() else 1})"
         elif vuln_crashes and fixed_crashes:
             notes = "Both versions crash"
         elif not vuln_crashes and fixed_crashes:
@@ -590,11 +585,11 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # Success indication: ephemeral containers (--rm) + repro-check (3/5 threshold) reduce flakiness
-        # ASLR disabled but heap allocation timing can still cause flakiness in CVE-2024-57970
+        # Success indication: setarch -R ensures ASLR is disabled for deterministic crashes
+        # Repro-check (3/3) validates crash is reproducible with identical memory layout
         # Images built once at pipeline start, reused across iterations for speed
         if verify_result['success']:
-            print("  ✓ SUCCESS CONFIRMED - Repro-check verified crash is reproducible (3/5 threshold)")
+            print("  ✓ SUCCESS CONFIRMED - Crash is deterministic (3/3 with ASLR disabled)")
         
         # Add to history with complete information for next iteration
         verify_history.append({
