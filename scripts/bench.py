@@ -25,7 +25,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     tdir = tasks_root() / args.task_id
     if not tdir.exists():
         die(f"Unknown task: {args.task_id}")
-    out = docker_compose(tdir, ["build", "--no-cache", "--pull"])
+    out = docker_compose(tdir, ["build"])
     ensure_ok(out, "docker compose build")
     print(f"[green]Built[/green] {args.task_id}")
 
