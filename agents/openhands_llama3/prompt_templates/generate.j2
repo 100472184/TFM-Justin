@@ -69,11 +69,24 @@ Iteration {{ result.iteration }}:
 - Mutation applied: {{ result.mutation_success }}
 - Result: vuln_crashes={{ result.vuln_crashes }}, fixed_crashes={{ result.fixed_crashes }}
 - Success: {{ result.success }} ({{ result.notes }})
+{% if result.vuln_stderr_preview %}
+- Vulnerable stderr: {{ result.vuln_stderr_preview }}
+{% endif %}
+{% if result.fixed_stderr_preview %}
+- Fixed stderr: {{ result.fixed_stderr_preview }}
+{% endif %}
 {% if result.notes == "Flaky result - need consistent crash" %}
 - **⚠️ FLAKY RESULT:** Crash happened but not consistently (not 3/3 times)
 - **ACTION REQUIRED:** Adjust truncation length by ±10-30 bytes from current size
 - **Example:** If you tried 750, now try 740, 730, 720, 710, or 700
 - You're VERY CLOSE to the right size - keep exploring nearby sizes!
+{% endif %}
+{% if result.notes == "No crash detected" and result.vuln_exit_code == 1 %}
+- **⚠️ EXIT CODE 1 MEANS:** bsdtar detected an error but did NOT crash (ASan didn't trigger)
+- **POSSIBLE CAUSES:**
+  - The mutation damaged TAR structure (headers/checksums) instead of triggering the strlen bug
+  - The truncation point doesn't create the vulnerable condition
+- **TRY:** Use a different truncation size: 768, 1471, or 3072 bytes
 {% endif %}
 {% endif %}
 
