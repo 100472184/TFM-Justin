@@ -294,11 +294,16 @@ def run_pipeline(
             verify_history=verify_history[-3:]  # Last 3 results
         )
         
-        analysis = llm.completion_json(
-            schema_name="analyze",
-            system_prompt="You are a security researcher analyzing CVE vulnerabilities for academic research.",
-            user_prompt=analyze_prompt
-        )
+        try:
+            analysis = llm.completion_json(
+                schema_name="analyze",
+                system_prompt="You are a security researcher analyzing CVE vulnerabilities for academic research.",
+                user_prompt=analyze_prompt
+            )
+        except Exception as e:
+            print(f"  ERROR: ANALYZE phase failed: {e}")
+            print(f"  Stopping pipeline at iteration {iteration}")
+            return {"success": False, "iteration": iteration - 1, "run_dir": run_dir, "error": f"ANALYZE failed: {str(e)}"}
         
         write_text(iter_dir / "analysis.json", json.dumps(analysis, indent=2))
         print(f"  Summary: {analysis.get('summary', 'N/A')[:100]}...")
@@ -350,11 +355,24 @@ def run_pipeline(
             if attempt > 1:
                 print(f"\n  Retry attempt {attempt}/{max_generate_attempts}")
             
-            generation = llm.completion_json(
-                schema_name="generate",
-                system_prompt="You are a security researcher proposing seed mutations for vulnerability research.",
-                user_prompt=generate_prompt
-            )
+            try:
+                generation = llm.completion_json(
+                    schema_name="generate",
+                    system_prompt="You are a security researcher proposing seed mutations for vulnerability research.",
+                    user_prompt=generate_prompt
+                )
+            except Exception as e:
+                mutation_error = f"LLM generation failed: {str(e)}"
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "error": mutation_error,
+                    "mutations": []
+                })
+                print(f"  ERROR: {mutation_error}")
+                if attempt == max_generate_attempts:
+                    print(f"  LLM failed after {max_generate_attempts} attempts, skipping iteration")
+                    break
+                continue
             
             # Handle both object and array responses
             if isinstance(generation, list):

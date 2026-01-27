@@ -78,7 +78,7 @@ class OpenHandsLLMClient:
                 # Add delay between retries (exponential backoff)
                 if attempt > 0:
                     delay = 2 ** attempt  # 2s, 4s, 8s...
-                    print(f"  [yellow]Waiting {delay}s before retry...[/yellow]")
+                    print(f"  Waiting {delay}s before retry...")
                     time.sleep(delay)
                 
                 response = litellm.completion(
@@ -91,7 +91,7 @@ class OpenHandsLLMClient:
                 
                 # Debug: log empty responses
                 if not content or content.strip() == "":
-                    print(f"  [red]Warning: Empty response from LLM (attempt {attempt + 1}/{max_retries + 1})[/red]")
+                    print(f"  Warning: Empty response from LLM (attempt {attempt + 1}/{max_retries + 1})")
                     if attempt < max_retries:
                         continue
                     else:
@@ -132,8 +132,8 @@ class OpenHandsLLMClient:
             
             except json.JSONDecodeError as e:
                 # Log the problematic JSON for debugging
-                print(f"  [red]JSON parse error: {str(e)}[/red]")
-                print(f"  [yellow]Problematic JSON (first 500 chars): {content[:500]}[/yellow]")
+                print(f"  JSON parse error: {str(e)}")
+                print(f"  Problematic JSON (first 500 chars): {content[:500]}")
                 
                 if attempt < max_retries:
                     # Try to repair JSON
