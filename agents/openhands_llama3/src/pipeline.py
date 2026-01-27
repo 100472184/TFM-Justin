@@ -222,6 +222,10 @@ def run_pipeline(
     # History for prompts
     verify_history = []
     
+    # Store original base seed for fresh start each iteration
+    # This prevents corruption from propagating between iterations
+    base_seed_bytes = current_seed
+    
     # ===== INITIAL DOCKER SETUP (once per pipeline run) =====
     print("\n" + "="*60)
     print("DOCKER INITIALIZATION")
@@ -280,6 +284,11 @@ def run_pipeline(
         
         iter_dir = run_dir / f"iter_{iteration:03d}"
         ensure_dir(iter_dir)
+        
+        # Reset to fresh base seed each iteration
+        # This prevents corrupted mutations from propagating
+        current_seed = base_seed_bytes
+        print(f"  Starting from fresh base seed ({len(current_seed)} bytes)")
         
         # ===== PHASE 1: ANALYZE =====
         print("\n→ ANALYZE")

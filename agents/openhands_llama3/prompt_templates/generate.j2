@@ -43,10 +43,11 @@ This helps validate the CVE fix and develop better security testing tools.
 - Length: {{ seed_length }} bytes
 - Hex preview: {{ seed_preview }}
 
-**IMPORTANT:**
-- If seed_length < 1024, it may be invalid/incomplete
-- For TAR vulnerabilities, start with valid TAR structure (see context)
-- Mutations should preserve format validity until final truncation
+**IMPORTANT - Fresh Seed Each Iteration:**
+- Each iteration starts from FRESH base.tar ({{ seed_length }} bytes)
+- Previous mutations are NOT accumulated - you start clean each time
+- Use the history below to learn what sizes WORKED or FAILED
+- Try DIFFERENT truncation sizes based on what hasn't been tried yet
 
 {% if verify_history %}
 **Previous Attempts:**
