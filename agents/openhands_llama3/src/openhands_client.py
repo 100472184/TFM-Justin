@@ -90,34 +90,21 @@ class OpenHandsLLMClient:
                     print(f"  Waiting {delay}s before retry...")
                     time.sleep(delay)
                 
-                # Debug: log the kwargs used for the call
-                try:
-                    kw_preview = dict(self.llm_kwargs)
-                    if "api_key" in kw_preview and kw_preview["api_key"]:
-                        kw_preview["api_key"] = "<redacted>"
-                    print(f"  Calling LLM with kwargs: {kw_preview}")
-                except Exception:
-                    pass
+                # Only log retry attempts, not every call
+                pass  # Removed verbose kwargs logging
 
                 response = litellm.completion(
                     messages=messages,
                     **self.llm_kwargs
                 )
 
-                # Debug: log raw response object for troubleshooting JSON issues
-                try:
-                    print(f"  Raw LLM response: {repr(response)[:1000]}")
-                except Exception:
-                    pass
-                
                 # Extract content from response
                 content = response.choices[0].message.content
-
-                # Debug: log raw content preview
-                try:
-                    print(f"  Raw LLM content (first 1000 chars): {content[:1000]!s}")
-                except Exception:
-                    pass
+                
+                # Brief token count for monitoring
+                usage = getattr(response, 'usage', None)
+                if usage:
+                    print(f"  ✓ LLM responded ({usage.completion_tokens} tokens)")
 
                 # Debug: log empty responses
                 if not content or content.strip() == "":
@@ -177,9 +164,9 @@ class OpenHandsLLMClient:
                 return json.loads(content)
             
             except json.JSONDecodeError as e:
-                # Log the problematic JSON for debugging
-                print(f"  JSON parse error: {str(e)}")
-                print(f"  Problematic JSON (first 500 chars): {content[:500]}")
+                # Minimal error logging - show only error type and position
+                error_msg = str(e).split(':')[0] if ':' in str(e) else str(e)
+                print(f"  ⚠ JSON parse error: {error_msg[:60]}")
                 
                 if attempt < max_retries:
                     # Try to repair JSON
