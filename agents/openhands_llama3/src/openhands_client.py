@@ -129,15 +129,31 @@ class OpenHandsLLMClient:
                 
                 # Try to parse JSON with aggressive cleaning
                 content = content.strip()
-                
-                # Remove markdown code blocks
-                if content.startswith("```json"):
-                    content = content[7:]
-                if content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
+
+                # Prefer extracting JSON inside triple-backtick fences first
+                try:
+                    import re as _re
+                    m = _re.search(r'```(?:json\s*)?(\{.*?\}|\[.*?\])```', content, _re.DOTALL | _re.IGNORECASE)
+                    if m:
+                        content = m.group(1).strip()
+                    else:
+                        # Remove markdown code fences as fallback
+                        if content.startswith("```json"):
+                            content = content[7:]
+                        if content.startswith("```"):
+                            content = content[3:]
+                        if content.endswith("```"):
+                            content = content[:-3]
+                        content = content.strip()
+                except Exception:
+                    # On any regex error, fall back to naive fence removal
+                    if content.startswith("```json"):
+                        content = content[7:]
+                    if content.startswith("```"):
+                        content = content[3:]
+                    if content.endswith("```"):
+                        content = content[:-3]
+                    content = content.strip()
                 
                 # Remove comments (// and /* */ style)
                 import re
