@@ -116,10 +116,11 @@ def verify_task_images_ready(
         ...     print(f"Vuln: {versions['vuln']}")
         ...     print(f"Fixed: {versions['fixed']}")
     """
-    # Construct image names based on task_id convention
-    # Docker image names MUST be lowercase
-    vuln_image = f"{task_id.lower()}-target-vuln"
-    fixed_image = f"{task_id.lower()}-target-fixed"
+    # Construct image names based on compose.yml convention
+    # Images are published under the `cvebench` namespace with tags `:vuln` and `:fixed`
+    # Example: cvebench/cve-2024-57970_libarchive:vuln
+    vuln_image = f"cvebench/{task_id.lower()}:vuln"
+    fixed_image = f"cvebench/{task_id.lower()}:fixed"
     
     # Determine entrypoint based on task (currently hardcoded for libarchive)
     # TODO: Make this configurable per task
