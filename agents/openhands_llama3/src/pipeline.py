@@ -146,7 +146,7 @@ def validate_tar_structure(seed_bytes: bytes, task_id: str) -> tuple[bool, str]:
     except Exception as e:
         # Unexpected error - be permissive to avoid false rejections
         warning_msg = f"Warning: validation error {str(e)[:100]}"
-        print(f"  [yellow]{warning_msg}[/yellow]")
+        print(f"  {warning_msg}")
         return True, warning_msg
     finally:
         try:
@@ -196,7 +196,7 @@ def run_pipeline(
             print(f"✓ Using base seed: {base_seed}")
             current_seed = read_bytes(base_seed)
         else:
-            print(f"[yellow]Warning: No seed or base.tar found, creating minimal seed[/yellow]")
+            print("Warning: No seed or base.tar found, creating minimal seed")
             current_seed = b"\x00" * 512  # Minimal TAR block
     elif isinstance(seed_path, str):
         seed_path = Path(seed_path)
@@ -241,12 +241,12 @@ def run_pipeline(
             timeout=600
         )
         if build_result.returncode != 0:
-            print(f"  [red]ERROR: Build failed[/red]")
+            print("  ERROR: Build failed")
             print(f"  {build_result.stderr}")
             return {"success": False, "iteration": 0, "run_dir": run_dir, "error": "Build failed"}
         print("  ✓ Build complete")
     except Exception as e:
-        print(f"  [red]ERROR: Build exception: {e}[/red]")
+        print(f"  ERROR: Build exception: {e}")
         return {"success": False, "iteration": 0, "run_dir": run_dir, "error": str(e)}
     
     # Step 2: Verify images are ready
@@ -260,13 +260,13 @@ def run_pipeline(
         )
         
         if not images_ready:
-            print(f"  [red]ERROR: Images not ready after build[/red]")
+            print("  ERROR: Images not ready after build")
             return {"success": False, "iteration": 0, "run_dir": run_dir, "error": "Images not ready"}
         
         print(f"  ✓ Vulnerable version: {versions.get('vuln', 'unknown')}")
         print(f"  ✓ Fixed version: {versions.get('fixed', 'unknown')}")
     except Exception as e:
-        print(f"  [red]ERROR: Image verification failed: {e}[/red]")
+        print(f"  ERROR: Image verification failed: {e}")
         return {"success": False, "iteration": 0, "run_dir": run_dir, "error": str(e)}
     
     print("\n  ✓ Docker initialization complete - images ready for testing")
@@ -305,7 +305,7 @@ def run_pipeline(
         
         # Check for early stop
         if analysis.get("stop_early", False):
-            print("[yellow]  LLM requested early stop[/yellow]")
+            print("  LLM requested early stop")
             break
         
         # ===== PHASE 2: GENERATE =====
@@ -348,7 +348,7 @@ def run_pipeline(
             ) + feedback_text
             
             if attempt > 1:
-                print(f"\n  [yellow]Retry attempt {attempt}/{max_generate_attempts}[/yellow]")
+                print(f"\n  Retry attempt {attempt}/{max_generate_attempts}")
             
             generation = llm.completion_json(
                 schema_name="generate",
@@ -360,12 +360,12 @@ def run_pipeline(
             if isinstance(generation, list):
                 # LLM returned array directly instead of object
                 mutations = generation
-                print(f"  [yellow]Warning: LLM returned array instead of object, using as mutations[/yellow]")
+                print("  Warning: LLM returned array instead of object, using as mutations")
             elif isinstance(generation, dict):
                 mutations = generation.get("mutations", [])
             else:
                 mutations = []
-                print(f"  [red]Warning: Unexpected generation type: {type(generation)}[/red]")
+                print(f"  Warning: Unexpected generation type: {type(generation)}")
             
             if not mutations:
                 mutation_error = "No mutations proposed by LLM"
@@ -374,7 +374,7 @@ def run_pipeline(
                     "error": mutation_error,
                     "mutations": []
                 })
-                print("[yellow]  No mutations proposed[/yellow]")
+                print("  No mutations proposed")
                 continue
             
             # Try to apply mutations
@@ -388,7 +388,7 @@ def run_pipeline(
                     "error": mutation_error,
                     "mutations": mutations
                 })
-                print(f"[red]  {mutation_error}[/red]")
+                print(f"  {mutation_error}")
                 continue
             
             # Validate TAR structure (only skip for L3 which has complete context)
@@ -403,7 +403,7 @@ def run_pipeline(
                         "error": error_msg,
                         "mutations": mutations
                     })
-                    print(f"[red]  ✗ Validation failed: {error_msg[:100]}[/red]")
+                    print(f"  ✗ Validation failed: {error_msg[:100]}")
                     continue
                 
                 print("  ✓ Valid TAR structure")
@@ -440,8 +440,8 @@ def run_pipeline(
         
         # Check if we exhausted all attempts
         if not mutation_success:
-            print(f"[red]  Failed after {max_generate_attempts} attempts[/red]")
-            print(f"[yellow]  Skipping VERIFY for this iteration[/yellow]")
+            print(f"  Failed after {max_generate_attempts} attempts")
+            print("  Skipping VERIFY for this iteration")
             mutation_error = mutation_error or "All generation attempts failed"
             
             # Save failed state to JSON for feedback
@@ -515,12 +515,10 @@ def run_pipeline(
         fixed_crashes = ver.fixed_crashes
         success = ver.success
         
-        # Repro-check: if crash detected, re-run to confirm (avoid flaky positives)
-        # With setarch -R disabling ASLR, crashes should be 100% deterministic
+        # Repro-check: if crash detected, re-run to confirm
         if vuln_crashes and not fixed_crashes:
-            print("  [cyan]Repro-check: Confirming crash (2x more)...[/cyan]")
+            print("  Repro-check: Confirming crash (2x more)...")
             
-            # Re-run vulnerable 2 times (3 total runs with setarch -R)
             repro1 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
             repro2 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
             
@@ -530,11 +528,11 @@ def run_pipeline(
             crash_count = sum([ver.vuln_crashes, repro1_ver.vuln_crashes, repro2_ver.vuln_crashes])
             
             if crash_count >= 3:
-                print(f"  ✓ Repro confirmed ({crash_count}/3 runs crashed - deterministic)")
-                success = True  # Require 3/3 with ASLR disabled
+                print(f"  ✓ Repro confirmed ({crash_count}/3 runs crashed)")
+                success = True
             else:
-                print(f"  [yellow]⚠ Non-deterministic result: only {crash_count}/3 crashed (expected 3/3)[/yellow]")
-                success = False  # Reject if not 3/3
+                print(f"  ⚠ Non-deterministic result: {crash_count}/3 crashed (expected 3/3)")
+                success = False
         
         # Detailed output for debugging
         if vuln_crashes:
@@ -585,11 +583,9 @@ def run_pipeline(
         print(f"  Fixed: exit_code={verify_result['fixed_exit_code']}, crashes={verify_result['fixed_crashes']}")
         print(f"  Success: {verify_result['success']} - {verify_result['notes']}")
         
-        # Success indication: setarch -R ensures ASLR is disabled for deterministic crashes
-        # Repro-check (3/3) validates crash is reproducible with identical memory layout
         # Images built once at pipeline start, reused across iterations for speed
         if verify_result['success']:
-            print("  ✓ SUCCESS CONFIRMED - Crash is deterministic (3/3 with ASLR disabled)")
+            print("  ✓ SUCCESS CONFIRMED - Crash is deterministic (3/3)")
         
         # Add to history with complete information for next iteration
         verify_history.append({
