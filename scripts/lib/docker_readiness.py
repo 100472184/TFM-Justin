@@ -122,9 +122,20 @@ def verify_task_images_ready(
     vuln_image = f"cvebench/{task_id.lower()}:vuln"
     fixed_image = f"cvebench/{task_id.lower()}:fixed"
     
-    # Determine entrypoint based on task (currently hardcoded for libarchive)
-    # TODO: Make this configurable per task
-    entrypoint = "/opt/target/bin/bsdtar"
+    # Determine entrypoint from task.yml or use default
+    # Look for tasks/<task_id>/task.yml and read target.binary
+    import yaml
+    task_yml_path = Path(__file__).parent.parent.parent / "tasks" / task_id / "task.yml"
+    entrypoint = "/opt/target/bin/bsdtar"  # Default fallback
+    
+    if task_yml_path.exists():
+        try:
+            with open(task_yml_path, 'r') as f:
+                task_config = yaml.safe_load(f)
+            if task_config and 'target' in task_config and 'binary' in task_config['target']:
+                entrypoint = task_config['target']['binary']
+        except Exception:
+            pass  # Use default if reading fails
     
     versions = {}
     
