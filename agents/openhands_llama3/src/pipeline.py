@@ -302,7 +302,6 @@ def run_pipeline(
                              pass
         
         tried_sizes_str = str(sorted(list(set(tried_sizes)))) if tried_sizes else "None"
-        print(f"  DEBUG: tried_sizes passed to prompt: {tried_sizes_str}")
 
         # ===== PHASE 1: ANALYZE =====
         print("\n→ ANALYZE")
