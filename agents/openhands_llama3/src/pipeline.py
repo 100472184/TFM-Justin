@@ -290,6 +290,20 @@ def run_pipeline(
         current_seed = base_seed_bytes
         print(f"  Starting from fresh base seed ({len(current_seed)} bytes)")
         
+        # Calculate summary of all previously tried sizes to avoid "amnesia" in both ANALYZE and GENERATE
+        tried_sizes = []
+        for h in verify_history:
+            if h.get("mutations_applied"):
+                 for m in h["mutations_applied"]:
+                     if m.get("op") == "truncate" and "new_len" in m:
+                         try:
+                             tried_sizes.append(int(m["new_len"]))
+                         except (ValueError, TypeError):
+                             pass
+        
+        tried_sizes_str = str(sorted(list(set(tried_sizes)))) if tried_sizes else "None"
+        print(f"  DEBUG: tried_sizes passed to prompt: {tried_sizes_str}")
+
         # ===== PHASE 1: ANALYZE =====
         print("\n→ ANALYZE")
         
@@ -300,7 +314,8 @@ def run_pipeline(
             context=context,
             iteration=iteration,
             max_iters=max_iters,
-            verify_history=verify_history[-3:]  # Last 3 results
+            verify_history=verify_history[-3:],  # Last 3 results
+            tried_sizes=tried_sizes_str
         )
         
         try:
@@ -350,19 +365,6 @@ def run_pipeline(
                     feedback_text += f"  Mutations: {json.dumps(fa['mutations'])}\n"
                 feedback_text += "\n⚠️ Generate DIFFERENT mutations that preserve TAR structure.\n"
             
-            # Calculate summary of all previously tried sizes to avoid "amnesia"
-            tried_sizes = []
-            for h in verify_history:
-                if h.get("mutations_applied"):
-                     for m in h["mutations_applied"]:
-                         if m.get("op") == "truncate" and "new_len" in m:
-                             try:
-                                 tried_sizes.append(int(m["new_len"]))
-                             except (ValueError, TypeError):
-                                 pass
-            
-            tried_sizes_str = str(sorted(list(set(tried_sizes)))) if tried_sizes else "None"
-
             generate_template = env.get_template("generate.j2")
             generate_prompt = generate_template.render(
                 task_id=task_id,
