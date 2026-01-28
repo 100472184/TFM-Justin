@@ -188,16 +188,27 @@ def run_pipeline(
     
     # Convert seed_path to Path if it's a string, or set to None if not provided
     if seed_path is None:
-        # No seed provided, try to find base.tar
+        # No seed provided, try to find a base seed file
         task_seeds_dir = repo_root / "tasks" / task_id / "seeds"
-        base_seed = task_seeds_dir / "base.tar"
         
-        if base_seed.exists():
+        # Check for various seed file formats
+        seed_candidates = [
+            "base.tar", "base.json", "base.bin",
+            "seed.tar", "seed.json", "seed.bin"
+        ]
+        base_seed = None
+        for candidate in seed_candidates:
+            candidate_path = task_seeds_dir / candidate
+            if candidate_path.exists():
+                base_seed = candidate_path
+                break
+        
+        if base_seed:
             print(f"✓ Using base seed: {base_seed}")
             current_seed = read_bytes(base_seed)
         else:
-            print("Warning: No seed or base.tar found, creating minimal seed")
-            current_seed = b"\x00" * 512  # Minimal TAR block
+            print("Warning: No seed file found, creating minimal seed")
+            current_seed = b"\x00" * 512  # Minimal block
     elif isinstance(seed_path, str):
         seed_path = Path(seed_path)
         if seed_path.exists():
