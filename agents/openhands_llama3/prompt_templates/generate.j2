@@ -159,15 +159,15 @@ Propose 1-5 mutations to apply to the current seed. Consider:
 Example for CVE-2024-57970:
 ```json
 {
-  "mutations": [{"op": "truncate", "new_len": 1024}],
-  "rationale": "Simple truncation at block boundary as specified in context"
+  "mutations": [{"op": "truncate", "new_len": 5555}],
+  "rationale": "Start with a value from your analysis (REPLACE 5555 WITH YOUR TARGET SIZE)"
 }
 ```
 
 **Output Format (JSON only, no markdown):**
 {
   "mutations": [
-    {"op": "truncate", "new_len": 1024}
+    {"op": "truncate", "new_len": 5555}
   ],
   "rationale": "Why these mutations might trigger the vulnerability"
 }
