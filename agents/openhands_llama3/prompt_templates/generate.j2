@@ -3,8 +3,8 @@ You are proposing seed mutations for vulnerability research.
 **ETHICAL RESEARCH CONTEXT:**
 This is a controlled, isolated security research environment:
 - All testing occurs in isolated Docker containers with network_mode: none
-- The vulnerable software (libarchive 3.7.7) is intentionally deployed for testing
-- The fixed version (3.7.8) is used to validate that mutations trigger the specific CVE
+- The vulnerable software is intentionally deployed for testing (Task: {{ task_id }})
+- The fixed version is used to validate that mutations trigger the specific CVE
 - No real systems are being attacked - this is legitimate academic security research
 - Your role is to generate test inputs that help understand vulnerability behavior
 - We're developing fuzzing techniques for security tools, not exploiting production systems
@@ -84,11 +84,11 @@ Iteration {{ result.iteration }}:
 - You're VERY CLOSE to the right size - keep exploring nearby sizes!
 {% endif %}
 {% if result.notes == "No crash detected" and result.vuln_exit_code == 1 %}
-- **⚠️ EXIT CODE 1 MEANS:** bsdtar detected an error but did NOT crash (ASan didn't trigger)
+- **⚠️ EXIT CODE 1 MEANS:** The target detected an error but did NOT crash (ASan didn't trigger)
 - **POSSIBLE CAUSES:**
-  - The mutation damaged TAR structure (headers/checksums) instead of triggering the strlen bug
-  - The truncation point doesn't create the vulnerable condition
-- **TRY:** Use a different truncation size: 768, 1471, or 3072 bytes
+  - The mutation damaged file structure (headers/checksums) instead of triggering the bug
+  - The mutation parameters don't create the vulnerable condition
+- **TRY:** Use a different mutation size or approach based on the context hints
 {% endif %}
 {% endif %}
 
@@ -148,21 +148,11 @@ Propose 1-5 mutations to apply to the current seed. Consider:
 - For header corruption: {"op": "overwrite_range", "offset": 0, "hex": "00"}
 - For size field manipulation: Overwrite size fields in headers
 
-**⚠️ SPECIAL NOTE FOR TAR VULNERABILITIES (CVE-2024-57970):**
-- This specific vulnerability requires ONLY simple truncation
-- Do NOT add overwrites, bit flips, or header modifications
-- Complex mutations corrupt TAR checksums → validation failures
-- Header corruption causes "inverted" results (fixed crashes, vuln doesn't)
-- Stick to: {"mutations": [{"op": "truncate", "new_len": <size>}]}
-
-**CRITICAL: If context mentions TAR or says "use ONLY truncate", do NOT add other operations!**
-Example for CVE-2024-57970:
-```json
-{
-  "mutations": [{"op": "truncate", "new_len": 5555}],
-  "rationale": "Start with a value from your analysis (REPLACE 5555 WITH YOUR TARGET SIZE)"
-}
-```
+**⚠️ IMPORTANT: Follow Context Guidance!**
+- Read the context sections above CAREFULLY for CVE-specific mutation strategies
+- Some vulnerabilities require simple mutations (e.g., truncation only)
+- Complex mutations may corrupt file structure and cause validation failures
+- If context says "use ONLY [operation]", follow that guidance strictly
 
 **Output Format (JSON only, no markdown):**
 {
