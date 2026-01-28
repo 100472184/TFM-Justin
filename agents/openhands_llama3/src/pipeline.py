@@ -291,8 +291,10 @@ def run_pipeline(
         print(f"  Starting from fresh base seed ({len(current_seed)} bytes)")
         
         # Calculate summary of all previously tried sizes to avoid "amnesia" in both ANALYZE and GENERATE
+        # Calculate summary of all previously tried sizes to avoid "amnesia" in both ANALYZE and GENERATE
         tried_sizes = []
         for h in verify_history:
+            # 1. Check verified mutations
             if h.get("mutations_applied"):
                  for m in h["mutations_applied"]:
                      if m.get("op") == "truncate" and "new_len" in m:
@@ -300,6 +302,17 @@ def run_pipeline(
                              tried_sizes.append(int(m["new_len"]))
                          except (ValueError, TypeError):
                              pass
+            
+            # 2. Check failed attempts (e.g. validation errors, but we still tried this size)
+            if h.get("failed_attempts"):
+                for fa in h["failed_attempts"]:
+                    if fa.get("mutations"):
+                        for m in fa["mutations"]:
+                            if m.get("op") == "truncate" and "new_len" in m:
+                                try:
+                                    tried_sizes.append(int(m["new_len"]))
+                                except (ValueError, TypeError):
+                                    pass
         
         tried_sizes_str = str(sorted(list(set(tried_sizes)))) if tried_sizes else "None"
 
