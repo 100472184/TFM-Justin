@@ -177,8 +177,30 @@ class OpenHandsLLMClient:
                 
                 content = content.strip()
                 
-                return json.loads(content)
-            
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError:
+                    # Fallback: Try ast.literal_eval for Python-style dicts/lists
+                    # This handles:
+                    # - Single quotes: {'key': 'val'}
+                    # - Trailing commas: [1, 2,]
+                    # - Basic math: "A" * 10 (sometimes works if it's simple literal)
+                    # - Concatenation: "A" + "B" (sometimes)
+                    try:
+                        import ast
+                        # ast.literal_eval is safe (no arbitrary code execution)
+                        # It can handle basic Python literals which often matches what LLMs hallucinate
+                        evaluated = ast.literal_eval(content)
+                        if isinstance(evaluated, (dict, list)):
+                            return evaluated
+                    except (ValueError, SyntaxError):
+                        # If ast fails too, then we truly have invalid data
+                        pass
+                    
+                    # Re-raise original error to trigger retry logic
+                    # Re-raise original error to trigger retry logic
+                    raise
+
             except json.JSONDecodeError as e:
                 # Minimal error logging - show only error type and position
                 error_msg = str(e).split(':')[0] if ':' in str(e) else str(e)

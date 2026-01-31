@@ -135,6 +135,14 @@ Every hex string MUST have an EVEN number of characters:
 - Wrong: "abc" (3 chars) → Right: "ab" (2 chars) or "abcd" (4 chars)
 - Wrong: "0" (1 char) → Right: "00" (2 chars)
 
+**CRITICAL JSON SYNTAX RULES:**
+1. **NO CODE INSIDE JSON**: Do NOT use `"A" * 100` or `"str" + "ing"`.
+   - ❌ WRONG: `"key": "A" * 200`
+   - ✅ RIGHT: `"key": "AAAAAAAAAAAAAAAA..."` (write it out)
+   - ✅ BETTER: Use the `length` or `times` parameters if available.
+2. **NO COMMENTS**: Do not add `// comment` inside the JSON.
+3. **Pure JSON**: The output must be parseable by standard `json.loads()`.
+
 **BEFORE SUBMITTING, COUNT YOUR HEX CHARACTERS:**
 - If odd number of chars → ADD or REMOVE one character to make it even
 
