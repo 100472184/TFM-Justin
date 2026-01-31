@@ -177,6 +177,21 @@ class OpenHandsLLMClient:
                 
                 content = content.strip()
                 
+                # Pre-process: Handle common LLM "math in string" hallucination
+                # Matches: "A" * 123 or 'A' * 123
+                try:
+                    def replace_math(match):
+                        quote = match.group(1)
+                        char = match.group(2)
+                        times = int(match.group(3))
+                        # Limit to reasonable size to prevent DoS (e.g. 20MB)
+                        if times > 20 * 1024 * 1024: return match.group(0)
+                        return f'{quote}{char * times}{quote}'
+                    
+                    content = re.sub(r'(["\'])(.)\1\s*\*\s*(\d+)', replace_math, content)
+                except Exception:
+                    pass  # If regex fails, just proceed to json.loads
+
                 try:
                     return json.loads(content)
                 except json.JSONDecodeError:

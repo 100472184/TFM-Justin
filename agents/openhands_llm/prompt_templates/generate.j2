@@ -125,6 +125,12 @@ Iteration {{ result.iteration }}:
    Use for: Safely creating large payloads for PAX header vulnerabilities without breaking TAR structure.
    Note: This completely replaces the file content with the new PAX archive.
 
+4. **PAYLOAD SIZE MATTERS**:
+   - **Stack Overflows (alloca)**: Typically require large payloads (e.g., **5MB - 10MB**).
+   - **Buffer Overflows**: Might need specific offsets or patterns.
+   - Do NOT be afraid to use `add_pax_header` with `length=8000000` (8MB) or more if a stack overflow is suspected.
+   - Tiny payloads (100 bytes) RARELY work for these vulnerabilities. Go BIG.
+
 **CRITICAL HEX STRING REQUIREMENTS:**
 Every hex string MUST have an EVEN number of characters:
 - ✅ VALID: "00" (2 chars), "ff" (2 chars), "cafebabe" (8 chars), "deadbeef" (8 chars)
