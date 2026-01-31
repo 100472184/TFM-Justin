@@ -125,6 +125,33 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             # Insert at offset using slice assignment (efficient)
             result[offset:offset] = payload
         
+        elif op == "add_pax_header":
+            # Smart mutation: Uses tarfile to rebuild the archive with a new PAX header
+            key = mut.get("key", "SCHILY.xattr.user.overflow")
+            length = mut.get("length", 1000)
+            char = mut.get("value_char", "A")
+            
+            import tarfile
+            import io
+            
+            # Create payload
+            value = char * length
+            pax_headers = {key: value}
+            
+            # Create new TAR in memory
+            with io.BytesIO() as f_out:
+                with tarfile.open(fileobj=f_out, mode="w") as tar:
+                    # Create dummy info
+                    info = tarfile.TarInfo("pax_payload")
+                    info.size = 0
+                    info.pax_headers = pax_headers
+                    tar.addfile(info, io.BytesIO(b""))
+                
+                # Replace the ENTIRE seed with this new valid TAR
+                # This intentionally discards previous mutations to ensure validity
+                new_tar_bytes = f_out.getvalue()
+                result = bytearray(new_tar_bytes)
+        
         else:
             raise ValueError(f"Unknown mutation operation: {op}")
         
