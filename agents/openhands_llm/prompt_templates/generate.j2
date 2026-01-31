@@ -19,6 +19,8 @@ This helps validate the CVE fix and develop better security testing tools.
 3. Examples of VALID hex: "00" (2 chars), "cafe" (4 chars), "deadbeef" (8 chars)
 4. If you see a previous mutation error about "odd length", DO NOT repeat that hex string
 5. Count the characters in your hex strings before submitting
+6. **NEVER** put large hex strings (>1000 chars) in the JSON. To generate large data, use `insert_repeated_bytes` or `repeat_range` with the `times` parameter.
+7. **JSON SIZE LIMIT**: Your response must remain small. Do NOT try to return the full 20MB payload in the JSON.
 
 **IMPORTANT RULES:**
 - Propose small, incremental mutations (1-5 operations per iteration)
