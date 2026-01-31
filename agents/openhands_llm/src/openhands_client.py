@@ -19,6 +19,12 @@ class OpenHandsLLMClient:
         # Auto-set base_url for ollama
         if self.model.startswith("ollama/") and not self.base_url:
             self.base_url = "http://localhost:11434"
+            
+        # Map generic LLM_* vars to Litellm/Vertex specific vars
+        if os.getenv("LLM_PROJECT"):
+            os.environ["VERTEX_PROJECT"] = os.getenv("LLM_PROJECT")
+        if os.getenv("LLM_LOCATION"):
+            os.environ["VERTEX_LOCATION"] = os.getenv("LLM_LOCATION")
         
         # Initialize LiteLLM directly (OpenHands uses it internally)
         try:

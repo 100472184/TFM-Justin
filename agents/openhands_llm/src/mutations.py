@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import List, Dict
 
-MAX_SEED_SIZE = 1024 * 1024  # 1MB limit
+MAX_SEED_SIZE = 20 * 1024 * 1024  # 20MB limit (needed for CVE-2023-39804)
 
 
 def validate_hex_string(hex_str: str, operation: str) -> None:
