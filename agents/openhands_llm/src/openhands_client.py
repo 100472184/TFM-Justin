@@ -10,7 +10,7 @@ class OpenHandsLLMClient:
     
     def __init__(self):
         """Initialize LLM client from environment variables."""
-        self.model = os.getenv("LLM_MODEL", "ollama/llama3")
+        self.model = os.getenv("LLM_MODEL", "gpt-3.5-turbo") # Default fallback if not set
         self.api_key = os.getenv("LLM_API_KEY", "")
         self.base_url = os.getenv("LLM_BASE_URL", "")
         self.timeout = int(os.getenv("LLM_TIMEOUT", "120"))

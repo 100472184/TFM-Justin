@@ -6,7 +6,7 @@ This script orchestrates the complete ANALYZE → GENERATE → VERIFY loop using
 OpenHands SDK with a local or remote LLM (e.g., LLaMA 3 via Ollama).
 
 Usage:
-    python -m agents.openhands_llama3.run \
+    python -m agents.openhands_llm.run \
         --task-id CVE-2024-57970_libarchive \
         --level L3 \
         --max-iters 10 \
@@ -18,8 +18,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from agents.openhands_llama3.src.pipeline import run_pipeline
-from agents.openhands_llama3.src.io_utils import write_text, now_run_id
+from agents.openhands_llm.src.pipeline import run_pipeline
+from agents.openhands_llm.src.io_utils import write_text, now_run_id
 
 
 def main():
@@ -58,7 +58,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Get repository root (assumes we're in agents/openhands_llama3/)
+    # Get repository root (assumes we're in agents/openhands_llm/)
     repo_root = Path(__file__).parent.parent.parent.resolve()
 
     print(f"{'='*70}")
