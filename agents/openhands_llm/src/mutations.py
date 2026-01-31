@@ -21,6 +21,7 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
     - overwrite_range: {"op": "overwrite_range", "offset": 10, "hex": "cafebabe"}
     - truncate: {"op": "truncate", "new_len": 200}
     - repeat_range: {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
+    - insert_repeated_bytes: {"op": "insert_repeated_bytes", "offset": 20, "hex": "41", "times": 1000}
     """
     result = bytearray(seed_bytes)
     
@@ -97,6 +98,32 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             # Repeat the chunk
             for _ in range(times - 1):
                 result.extend(chunk)
+        
+        elif op == "insert_repeated_bytes":
+            offset = mut.get("offset", 0)
+            hex_str = mut.get("hex", "").replace(" ", "")
+            times = mut.get("times", 1)
+            
+            if offset < 0 or offset > len(result):
+                raise ValueError(f"insert_repeated_bytes offset {offset} out of range [0, {len(result)}]")
+            if times < 1:
+                continue
+            
+            if not hex_str:
+                continue
+            if len(hex_str) % 2 != 0:
+                raise ValueError(f"Invalid hex in insert_repeated_bytes: {hex_str} (odd length)")
+            
+            try:
+                new_bytes = bytes.fromhex(hex_str)
+            except ValueError as e:
+                raise ValueError(f"Invalid hex in insert_repeated_bytes: {hex_str}") from e
+                
+            # Create the payload
+            payload = new_bytes * times
+            
+            # Insert at offset using slice assignment (efficient)
+            result[offset:offset] = payload
         
         else:
             raise ValueError(f"Unknown mutation operation: {op}")
