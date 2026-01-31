@@ -21,10 +21,14 @@ class OpenHandsLLMClient:
             self.base_url = "http://localhost:11434"
             
         # Map generic LLM_* vars to Litellm/Vertex specific vars
-        if os.getenv("LLM_PROJECT"):
-            os.environ["VERTEX_PROJECT"] = os.getenv("LLM_PROJECT")
-        if os.getenv("LLM_LOCATION"):
-            os.environ["VERTEX_LOCATION"] = os.getenv("LLM_LOCATION")
+        # Map generic LLM_* vars to Litellm/Vertex specific vars
+        vertex_project = os.getenv("LLM_PROJECT")
+        vertex_location = os.getenv("LLM_LOCATION")
+        
+        if vertex_project:
+            os.environ["VERTEX_PROJECT"] = vertex_project
+        if vertex_location:
+            os.environ["VERTEX_LOCATION"] = vertex_location
         
         # Initialize LiteLLM directly (OpenHands uses it internally)
         try:
@@ -38,6 +42,12 @@ class OpenHandsLLMClient:
                 "model": self.model,
                 "timeout": self.timeout,
             }
+            
+            # Explicitly pass Vertex credentials if present (fixes ADC issues)
+            if vertex_project:
+                 self.llm_kwargs["vertex_project"] = vertex_project
+            if vertex_location:
+                 self.llm_kwargs["vertex_location"] = vertex_location
             
             if self.api_key:
                 self.llm_kwargs["api_key"] = self.api_key
