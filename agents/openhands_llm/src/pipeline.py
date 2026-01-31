@@ -458,23 +458,21 @@ def run_pipeline(
                 continue
             
             # Validate TAR structure (only skip for L3 which has complete context)
-            if level != "L3":
-                print("  Validating TAR structure...")
-                is_valid, error_msg = validate_tar_structure(new_seed, task_id)
-                
-                if not is_valid:
-                    mutation_error = error_msg
-                    failed_attempts.append({
-                        "attempt": attempt,
-                        "error": error_msg,
-                        "mutations": mutations
-                    })
-                    print(f"  ✗ Validation failed: {error_msg[:100]}")
-                    continue
-                
-                print("  ✓ Valid TAR structure")
-            else:
-                print("  Skipping validation (L3 has complete context)")
+            # Validate TAR structure (ENABLED for all levels now to prevent opaque exit_code=2)
+            print("  Validating TAR structure...")
+            is_valid, error_msg = validate_tar_structure(new_seed, task_id)
+            
+            if not is_valid:
+                mutation_error = error_msg
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "error": error_msg,
+                    "mutations": mutations
+                })
+                print(f"  ✗ Validation failed: {error_msg[:100]}")
+                continue
+            
+            print("  ✓ Valid TAR structure")
             
             # Success!
             mutation_success = True
