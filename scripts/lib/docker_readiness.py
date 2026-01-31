@@ -74,6 +74,10 @@ def verify_image_ready(
             if result.stdout.strip():
                 return True, result.stdout.strip()
             
+            # Debug: Print stderr if we failed to get stdout
+            if result.stderr.strip():
+                print(f"    [DEBUG] stderr: {result.stderr.strip()}")
+            
             # No output yet - this is normal for first 1-2 attempts
             # Wait 2 seconds before retry (validated optimal timing)
             time.sleep(2.0)
