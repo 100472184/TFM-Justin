@@ -120,6 +120,11 @@ Iteration {{ result.iteration }}:
    Use for: Injecting large payloads inside file structure (e.g. expanding headers), triggering buffer overflows
    CRITICAL: This moves all subsequent bytes forward. Use carefully to avoid breaking offsets slightly later in the file.
 
+7. **add_pax_header**: Create a valid PAX header with large value (REBUILDS TAR)
+   Example: {"op": "add_pax_header", "key": "SCHILY.xattr.user.overflow", "length": 10000000, "value_char": "A"}
+   Use for: Safely creating large payloads for PAX header vulnerabilities without breaking TAR structure.
+   Note: This completely replaces the file content with the new PAX archive.
+
 **CRITICAL HEX STRING REQUIREMENTS:**
 Every hex string MUST have an EVEN number of characters:
 - ✅ VALID: "00" (2 chars), "ff" (2 chars), "cafebabe" (8 chars), "deadbeef" (8 chars)
