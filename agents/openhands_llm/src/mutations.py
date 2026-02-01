@@ -153,20 +153,24 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
         
         elif op == "add_json_nesting":
             # Smart mutation: Creates deeply nested JSON to trigger recursion limits
+            # USES STRING MANIPULATION to avoid Python's json.dumps recursion limit
             layers = mut.get("layers", 100)
             key = mut.get("key", "a")
             value = mut.get("value", "leaf")
             
-            import json
+            # Sanitize inputs to ensure valid JSON components
+            # (Basic check to avoid injection if LLM returns weird quotes)
+            key = key.replace('"', '\\"')
+            value = value.replace('"', '\\"')
             
-            # Create nested structure
-            current = value
-            for _ in range(layers):
-                current = {key: current}
+            # Construct string: {"a":{"a": ... "value" ... }}
+            # Each layer adds '{"key":' prefix and '}' suffix
+            prefix = ('{"' + key + '":') * layers
+            suffix = '}' * layers
             
-            # Replace ENTIRE seed with this new valid JSON
-            new_json_bytes = json.dumps(current).encode("utf-8")
-            result = bytearray(new_json_bytes)
+            new_json_str = f'{prefix}"{value}"{suffix}'
+            
+            result = bytearray(new_json_str.encode("utf-8"))
             
         elif op == "add_json_field":
             # Smart mutation: Adds a field to the root JSON object
