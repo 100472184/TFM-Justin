@@ -71,10 +71,15 @@ def verify_image_ready(
             elapsed = time.time() - start_time
             
             # Check if we got output (even if exit code is non-zero)
-            if result.stdout.strip():
-                return True, result.stdout.strip()
+            # Accept stderr as valid output (proof of life, even if checking version fails)
+            combined_output = result.stdout.strip()
+            if not combined_output and result.stderr.strip():
+                combined_output = result.stderr.strip()
             
-            # Debug: Print stderr if we failed to get stdout
+            if combined_output:
+                return True, combined_output
+            
+            # Debug: Print stderr if we failed to get output (should be covered above, but for safety)
             if result.stderr.strip():
                 print(f"    [DEBUG] stderr: {result.stderr.strip()}")
             
@@ -141,6 +146,17 @@ def verify_task_images_ready(
         except Exception:
             pass  # Use default if reading fails
     
+    # Determine verification arguments from task.yml
+    verify_args = ["--version"]  # Default
+    if task_yml_path.exists():
+        try:
+            with open(task_yml_path, 'r') as f:
+                task_config = yaml.safe_load(f)
+            if task_config and 'target' in task_config and 'verify_args' in task_config['target']:
+                verify_args = task_config['target']['verify_args']
+        except Exception:
+            pass
+    
     versions = {}
     
     # Verify vulnerable image
@@ -155,7 +171,7 @@ def verify_task_images_ready(
         vuln_ready, vuln_version = verify_image_ready(
             vuln_image,
             entrypoint,
-            ["--version"],
+            verify_args,
             max_attempts=1,  # Single attempt, we control the loop
             retry_delay=retry_delay
         )
@@ -190,7 +206,7 @@ def verify_task_images_ready(
         fixed_ready, fixed_version = verify_image_ready(
             fixed_image,
             entrypoint,
-            ["--version"],
+            verify_args,
             max_attempts=1,  # Single attempt, we control the loop
             retry_delay=retry_delay
         )
