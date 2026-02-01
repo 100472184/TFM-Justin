@@ -10,7 +10,7 @@ class OpenHandsLLMClient:
     
     def __init__(self):
         """Initialize LLM client from environment variables."""
-        self.model = os.getenv("LLM_MODEL", "vertex_ai/gemini-3.0-pro") # Default per user preference
+        self.model = os.getenv("LLM_MODEL", "vertex_ai/gemini-2.0-flash-001") # Default stable model
         self.api_key = os.getenv("LLM_API_KEY", "")
         self.base_url = os.getenv("LLM_BASE_URL", "")
         self.timeout = int(os.getenv("LLM_TIMEOUT", "120"))
