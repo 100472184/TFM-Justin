@@ -81,31 +81,55 @@ def run_benchmark(
         )
 
 
-def validate_tar_structure(seed_bytes: bytes, task_id: str) -> tuple[bool, str]:
+def validate_seed(seed_bytes: bytes, extension: str) -> tuple[bool, str]:
+    """
+    Validate seed structure based on file extension.
+    Supports .tar (via validate_tar_structure) and .json (via validate_json_structure).
+    """
+    ext = extension.lower()
+    if ext == ".tar":
+        return validate_tar_structure(seed_bytes)
+    elif ext == ".json":
+        return validate_json_structure(seed_bytes)
+    else:
+        # Unknown extension - default to valid (or warning)
+        return True, f"Warning: No validator for extension {ext}"
+
+
+def validate_json_structure(seed_bytes: bytes) -> tuple[bool, str]:
+    """
+    Validate that seed is valid JSON.
+    """
+    try:
+        # specific check for empty bytes which fail json.loads
+        if not seed_bytes:
+             return False, "Empty seed"
+
+        # Try to parse as JSON
+        json.loads(seed_bytes)
+        return True, ""
+    except json.JSONDecodeError as e:
+        return False, f"Invalid JSON: {str(e)[:100]}"
+    except Exception as e:
+        return False, f"JSON validation error: {str(e)[:100]}"
+
+
+def validate_tar_structure(seed_bytes: bytes) -> tuple[bool, str]:
     """
     Validate that seed has valid TAR structure using Python tarfile module.
-    
-    This is 100% local validation (no Docker) that strictly checks if the TAR
-    can be parsed by Python's tarfile library. This is more reliable than
-    using Docker which might be permissive with partially-valid TARs.
-    
-    Trade-off: For CVEs in parsers, this may reject seeds that libarchive
-    would accept (and could trigger crashes). We allow truncation/empty headers
-    but reject corruption (bad checksums). For CVEs needing invalid structures,
-    disable validation (level="L3") or adjust filtering logic.
-    
-    Returns:
-        (is_valid, error_message)
-        - is_valid: True if TAR structure is valid
-        - error_message: Descriptive error if invalid
     """
     import tempfile
     import tarfile
     
     # Write seed to temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".tar") as tmp:
-        tmp.write(seed_bytes)
-        tmp_path = tmp.name
+        try:
+            tmp.write(seed_bytes)
+            tmp_path = tmp.name
+        except Exception as e:
+             return False, f"Write error: {str(e)}"
+        finally:
+             tmp.close() # Ensure checks are done on closed file
     
     try:
         # Try to open as TAR using Python's tarfile module
@@ -113,8 +137,12 @@ def validate_tar_structure(seed_bytes: bytes, task_id: str) -> tuple[bool, str]:
         # Use 'r:' mode (uncompressed) to avoid auto-detection issues with truncated files
         with tarfile.open(tmp_path, 'r:') as tar:
             # Try to list members (validates structure)
-            members = tar.getmembers()
-            
+            try:
+                members = tar.getmembers()
+            except Exception as e:
+                 # getmembers() can fail on some corrupted files that open() accepts
+                 return False, f"TAR getmembers failed: {str(e)[:100]}"
+
             # Additional check: must have at least one member
             if len(members) == 0:
                 return False, "TAR has no members (empty or invalid)"
@@ -222,9 +250,18 @@ def run_pipeline(
         if seed_path.exists():
             print(f"✓ Loading seed from: {seed_path}")
             current_seed = read_bytes(seed_path)
+            seed_extension = seed_path.suffix
         else:
             print(f"✗ Seed not found: {seed_path}")
             raise FileNotFoundError(f"Seed file not found: {seed_path}")
+    
+    # If using base seed, determine extension
+    if 'seed_extension' not in locals():
+         if base_seed:
+             seed_extension = base_seed.suffix
+         else:
+             # Fallback default
+             seed_extension = ".tar"
     
     # Setup Jinja2 templates
     templates_dir = Path(__file__).parent.parent / "prompt_templates"
@@ -458,9 +495,9 @@ def run_pipeline(
                 continue
             
             # Validate TAR structure (only skip for L3 which has complete context)
-            # Validate TAR structure (ENABLED for all levels now to prevent opaque exit_code=2)
-            print("  Validating TAR structure...")
-            is_valid, error_msg = validate_tar_structure(new_seed, task_id)
+            # Validate Seed structure (ENABLED for all levels now)
+            print(f"  Validating structure ({seed_extension})...")
+            is_valid, error_msg = validate_seed(new_seed, seed_extension)
             
             if not is_valid:
                 mutation_error = error_msg
@@ -472,7 +509,7 @@ def run_pipeline(
                 print(f"  ✗ Validation failed: {error_msg[:100]}")
                 continue
             
-            print("  ✓ Valid TAR structure")
+            print("  ✓ Valid structure")
             
             # Success!
             mutation_success = True
