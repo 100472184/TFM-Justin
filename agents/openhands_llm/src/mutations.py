@@ -149,8 +149,51 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
                 
                 # Replace the ENTIRE seed with this new valid TAR
                 # This intentionally discards previous mutations to ensure validity
-                new_tar_bytes = f_out.getvalue()
                 result = bytearray(new_tar_bytes)
+        
+        elif op == "add_json_nesting":
+            # Smart mutation: Creates deeply nested JSON to trigger recursion limits
+            layers = mut.get("layers", 100)
+            key = mut.get("key", "a")
+            value = mut.get("value", "leaf")
+            
+            import json
+            
+            # Create nested structure
+            current = value
+            for _ in range(layers):
+                current = {key: current}
+            
+            # Replace ENTIRE seed with this new valid JSON
+            new_json_bytes = json.dumps(current).encode("utf-8")
+            result = bytearray(new_json_bytes)
+            
+        elif op == "add_json_field":
+            # Smart mutation: Adds a field to the root JSON object
+            key = mut.get("key", "payload")
+            value_char = mut.get("value_char", "A")
+            length = mut.get("length", 1000)
+            
+            import json
+            
+            try:
+                # Try to load existing seed as JSON, or start fresh if invalid
+                try:
+                    data = json.loads(result.decode("utf-8", errors="ignore"))
+                    if not isinstance(data, dict):
+                        data = {}
+                except:
+                    data = {}
+                
+                # Add/Overwrite field
+                data[key] = value_char * length
+                
+                new_json_bytes = json.dumps(data).encode("utf-8")
+                result = bytearray(new_json_bytes)
+            except Exception:
+                # Fallback: just overwrite with a fresh JSON if something goes wrong
+                data = {key: value_char * length}
+                result = bytearray(json.dumps(data).encode("utf-8"))
         
         else:
             raise ValueError(f"Unknown mutation operation: {op}")
