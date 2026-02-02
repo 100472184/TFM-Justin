@@ -106,10 +106,20 @@ def validate_json_structure(seed_bytes: bytes) -> tuple[bool, str]:
              return False, "Empty seed"
 
         # Try to parse as JSON
+        # NOTE: For Stack Overflow vulnerabilities (deep recursion), Python's json.loads
+        # might fail with RecursionError or JSONDecodeError("maximum recursion depth exceeded").
+        # This is expected and desirable for our fuzzing target.
         json.loads(seed_bytes)
         return True, ""
     except json.JSONDecodeError as e:
-        return False, f"Invalid JSON: {str(e)[:100]}"
+        error_str = str(e)
+        if "recursion" in error_str.lower():
+            # Accept recursion limit errors as potentially valid deep JSON
+            return True, ""
+        return False, f"Invalid JSON: {error_str[:100]}"
+    except RecursionError:
+        # Python recursion limit hit - this is likely a valid deep JSON
+        return True, ""
     except Exception as e:
         return False, f"JSON validation error: {str(e)[:100]}"
 
