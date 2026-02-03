@@ -18,9 +18,7 @@ def run_target(service_name):
         "-f", "tasks/CVE-2021-32292_jsonc/compose.yml",
         "run", "--rm", 
         "-v", f"{os.getcwd()}/manual_seed.json:/input/seed.bin",
-        service_name,
-        "valgrind", "--leak-check=no", "--error-exitcode=99",
-        "/usr/local/bin/json_parse", "/input/seed.bin"
+        service_name
     ]
     
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -33,9 +31,7 @@ def run_target(service_name):
         print(f"    STDERR: {result.stderr[:500]}")
     
     icon = "❓"
-    if code == 99:  # Valgrind detectó error
-        icon = "💥 VALGRIND ERROR (likely out-of-bounds read)"
-    elif code == 139:
+    if code == 139:
         icon = "💥 SEGFAULT"
     elif code == 0:
         icon = "✅ OK"
@@ -56,15 +52,15 @@ def main():
     print("\n--- RESULTS ---")
     success = False
     
-    # Vulnerable: debería crashear (139) o valgrind detectar error (99)
+    # Vulnerable: debería crashear (139)
     # Fixed: debería salir limpiamente (0 o 1)
-    if (c_vuln in [139, 99]) and c_fixed not in [139, 99]:
-        print("✅ SUCCESS! Vulnerable crashed/errored, Fixed handled it cleanly.")
+    if (c_vuln == 139) and c_fixed != 139:
+        print("✅ SUCCESS! Vulnerable crashed, Fixed handled it cleanly.")
         success = True
-    elif c_vuln not in [139, 99]:
-        print("❌ FAIL: Vulnerable version did NOT crash/error.")
-    elif c_fixed in [139, 99]:
-        print("❌ FAIL: Fixed version also crashed/errored.")
+    elif c_vuln != 139:
+        print("❌ FAIL: Vulnerable version did NOT crash.")
+    elif c_fixed == 139:
+        print("❌ FAIL: Fixed version also crashed.")
         
     sys.exit(0 if success else 1)
 
