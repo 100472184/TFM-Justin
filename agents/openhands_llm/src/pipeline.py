@@ -500,6 +500,15 @@ def run_pipeline(
             try:
                 new_seed = apply_mutations(current_seed, mutations)
                 print(f"  Applied {len(mutations)} mutation(s): {len(current_seed)} → {len(new_seed)} bytes")
+                
+                # DEBUG: Print seed tail to verify CVE trigger
+                if len(new_seed) > 0:
+                    preview_len = 32
+                    if len(new_seed) <= preview_len * 2:
+                        print(f"  Seed Content (Hex): {new_seed.hex()}")
+                    else:
+                        tail = new_seed[-preview_len:]
+                        print(f"  Seed Tail (Last {preview_len} bytes): ...{tail.hex()}")
             except Exception as e:
                 mutation_error = f"Mutation application error: {str(e)}"
                 failed_attempts.append({
