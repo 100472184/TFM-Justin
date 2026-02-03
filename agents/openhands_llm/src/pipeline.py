@@ -642,6 +642,23 @@ def run_pipeline(
         fixed_crashes = ver.fixed_crashes
         success = ver.success
         
+        # ENHANCEMENT: Explicitly check for AddressSanitizer (ASan) output
+        # ASan exits with code 1 (not 139), so bench.py might miss it.
+        vuln_asan = "AddressSanitizer" in verify_vuln.stderr and "stack-buffer-overflow" in verify_vuln.stderr
+        fixed_asan = "AddressSanitizer" in verify_fixed.stderr and "stack-buffer-overflow" in verify_fixed.stderr
+        
+        if vuln_asan:
+            print("  ✓ ASan detected stack-buffer-overflow in Vulnerable version!")
+            vuln_crashes = True
+            
+        if fixed_asan:
+             print("  ✗ ASan detected stack-buffer-overflow in Fixed version (Patch failed!)")
+             fixed_crashes = True
+             
+        # Re-evaluate success based on ASan results
+        if vuln_crashes and not fixed_crashes:
+            success = True
+        
         # Repro-check: if crash detected, re-run to confirm
         if vuln_crashes and not fixed_crashes:
             print("  Repro-check: Confirming crash (2x more)...")
