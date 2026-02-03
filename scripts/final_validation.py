@@ -43,7 +43,7 @@ def run_validation():
     
     vuln_has_overflow = "AddressSanitizer" in result_vuln.stderr and "buffer-overflow" in result_vuln.stderr
     
-    print(f"    Exit code: {result_vuln.exit_code}")
+    print(f"    Exit code: {result_vuln.returncode}")
     print(f"    ASan detected overflow: {'YES ✓' if vuln_has_overflow else 'NO ✗'}")
     
     print("\n[*] Testing fixed version (json-c 0.16)...")
@@ -55,7 +55,7 @@ def run_validation():
     fixed_has_overflow = "AddressSanitizer" in result_fixed.stderr and "buffer-overflow" in result_fixed.stderr
     fixed_handles_error = "Failed at offset" in result_fixed.stderr
     
-    print(f"    Exit code: {result_fixed.exit_code}")
+    print(f"    Exit code: {result_fixed.returncode}")
     print(f"    Handles error safely: {'YES ✓' if fixed_handles_error and not fixed_has_overflow else 'NO ✗'}")
     
     print("\n=== RESULTS ===")
