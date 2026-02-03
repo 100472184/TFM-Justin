@@ -61,9 +61,13 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             except ValueError as e:
                 raise ValueError(f"Invalid hex in overwrite_range: {hex_str}") from e
             
+            # Auto-expand: If offset is past end, fill with nulls
+            if offset > len(result):
+                result.extend(b'\x00' * (offset - len(result)))
+            
             # Allow offset to be at end of file (for appending) or within file
-            if offset < 0 or offset > len(result):
-                raise ValueError(f"overwrite_range offset {offset} out of range [0, {len(result)}]")
+            if offset < 0: # Still reject negative
+                raise ValueError(f"overwrite_range offset {offset} must be >= 0")
             
             # FIXED: Extend file if new_bytes goes beyond current size
             # This allows LLM to create larger payloads from small seeds
@@ -79,6 +83,9 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
                 raise ValueError(f"truncate new_len {new_len} must be >= 0")
             if new_len < len(result):
                 result = result[:new_len]
+            elif new_len > len(result):
+                # Extend with null bytes
+                result.extend(b'\x00' * (new_len - len(result)))
         
         elif op == "repeat_range":
             offset = mut.get("offset", 0)

@@ -255,6 +255,7 @@ def run_pipeline(
         if seed_path.exists():
             print(f"✓ Loading seed from: {seed_path}")
             current_seed = read_bytes(seed_path)
+            seed_extension = seed_path.suffix
         else:
             print(f"✗ Seed not found: {seed_path}")
             raise FileNotFoundError(f"Seed file not found: {seed_path}")
