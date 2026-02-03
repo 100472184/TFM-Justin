@@ -54,8 +54,9 @@ def run_benchmark(
         cmd.extend([
             "-f", str(compose_file), 
             "run", "--rm", "--no-deps", "--pull=never",
-            "-v", f"{seed_path.resolve()}:/input/seed.bin:ro",
-            service
+            "-v", f"{seed_path.resolve()}:/input/{seed_path.name}:ro",
+            service,
+            f"/input/{seed_path.name}"  # Pass the path inside container as argument if service expects it
         ])
         
         # Run container with --rm (auto-cleanup) and capture output directly
@@ -77,7 +78,7 @@ def run_benchmark(
         return RunResult(
             exit_code=124,  # Standard timeout exit code
             stdout="",
-            stderr="Timeout: container did not finish in 15 seconds"
+            stderr="Timeout: container did not finish in 60 seconds"
         )
 
 
@@ -609,7 +610,7 @@ def run_pipeline(
             continue
         
         # Save new seed only if mutation succeeded
-        seed_filename = f"mutated_seed_it{iteration:02d}.bin"
+        seed_filename = f"mutated_seed_it{iteration:02d}{seed_extension}"
         seed_file = iter_dir / seed_filename
         write_bytes(seed_file, new_seed)
         current_seed = new_seed
