@@ -224,6 +224,9 @@ def run_pipeline(
     print("Initializing LLM client...")
     llm = OpenHandsLLMClient()
     
+    # Initialize variables
+    base_seed = None
+
     # Convert seed_path to Path if it's a string, or set to None if not provided
     if seed_path is None:
         # No seed provided, try to find a base seed file
