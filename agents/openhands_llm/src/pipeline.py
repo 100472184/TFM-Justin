@@ -643,9 +643,12 @@ def run_pipeline(
         success = ver.success
         
         # ENHANCEMENT: Explicitly check for AddressSanitizer (ASan) output
-        # ASan exits with code 1 (not 139), so bench.py might miss it.
-        vuln_asan = "AddressSanitizer" in verify_vuln.stderr and "stack-buffer-overflow" in verify_vuln.stderr
-        fixed_asan = "AddressSanitizer" in verify_fixed.stderr and "stack-buffer-overflow" in verify_fixed.stderr
+        # ASan can write to stderr (mostly) but sometimes it's captured oddly. Check BOTH.
+        vuln_err_combined = (verify_vuln.stdout or "") + (verify_vuln.stderr or "")
+        fixed_err_combined = (verify_fixed.stdout or "") + (verify_fixed.stderr or "")
+        
+        vuln_asan = "AddressSanitizer" in vuln_err_combined and "buffer-overflow" in vuln_err_combined
+        fixed_asan = "AddressSanitizer" in fixed_err_combined and "buffer-overflow" in fixed_err_combined
         
         if vuln_asan:
             print("  ✓ ASan detected stack-buffer-overflow in Vulnerable version!")
@@ -654,6 +657,11 @@ def run_pipeline(
         if fixed_asan:
              print("  ✗ ASan detected stack-buffer-overflow in Fixed version (Patch failed!)")
              fixed_crashes = True
+        
+        # DEBUG: If no crash but exit code is suspicious, print stderr
+        if not vuln_asan and not vuln_crashes:
+            print(f"  DEBUG: Vuln Stderr head: {verify_vuln.stderr[:200]}")
+            print(f"  DEBUG: Vuln Stdout head: {verify_vuln.stdout[:200]}")
              
         # Re-evaluate success based on ASan results
         if vuln_crashes and not fixed_crashes:
@@ -666,10 +674,14 @@ def run_pipeline(
             repro1 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
             repro2 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
             
-            repro1_ver = verdict(repro1, verify_fixed)
-            repro2_ver = verdict(repro2, verify_fixed)
+            # Check repros for ASan too
+            r1_out = (repro1.stdout or "") + (repro1.stderr or "")
+            r2_out = (repro2.stdout or "") + (repro2.stderr or "")
             
-            crash_count = sum([ver.vuln_crashes, repro1_ver.vuln_crashes, repro2_ver.vuln_crashes])
+            r1_crash = repro1.exit_code == 139 or ("AddressSanitizer" in r1_out and "buffer-overflow" in r1_out)
+            r2_crash = repro2.exit_code == 139 or ("AddressSanitizer" in r2_out and "buffer-overflow" in r2_out)
+            
+            crash_count = sum([1, 1 if r1_crash else 0, 1 if r2_crash else 0])
             
             if crash_count >= 3:
                 print(f"  ✓ Repro confirmed ({crash_count}/3 runs crashed)")
