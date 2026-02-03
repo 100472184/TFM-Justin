@@ -626,8 +626,7 @@ def run_pipeline(
         # Project name for namespacing (prevents collisions with parallel runs)
         # Sanitize: lowercase, replace invalid chars, limit length
         import re
-        project_name_raw = f"{task_id}_{run_id}"
-        project_name = re.sub(r'[^a-z0-9_-]', '_', project_name_raw.lower())[:60]
+        project_name = "cve_repro"
         
         # Test vulnerable and fixed (images already built and verified)
         print("  Testing vulnerable version...")
