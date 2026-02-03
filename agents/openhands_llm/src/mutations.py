@@ -206,6 +206,26 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
                 data = {key: value_char * length}
                 result = bytearray(json.dumps(data).encode("utf-8"))
         
+        elif op == "pad_file":
+            target_len = mut.get("target_len", 0)
+            char = mut.get("char", "A")
+            
+            if target_len <= len(result):
+                # If already larger, do nothing or truncate? Let's just do nothing to be safe, 
+                # or maybe just ensure it's at least this size.
+                pass 
+            else:
+                # Expand
+                padding_len = target_len - len(result)
+                try:
+                    # Handle char as string or hex
+                    pad_byte = char.encode('utf-8') if len(char) == 1 else bytes.fromhex(char)
+                    pad_byte = pad_byte[:1] # Ensure single byte
+                except:
+                    pad_byte = b'A'
+                
+                result.extend(pad_byte * padding_len)
+        
         else:
             raise ValueError(f"Unknown mutation operation: {op}")
         
