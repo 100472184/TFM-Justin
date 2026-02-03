@@ -64,7 +64,7 @@ def run_benchmark(
             capture_output=True,
             text=True,
             check=False,
-            timeout=15
+            timeout=60
         )
         
         return RunResult(
