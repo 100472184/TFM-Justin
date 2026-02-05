@@ -693,8 +693,8 @@ def run_pipeline(
             r1_out = (repro1.stdout or "") + (repro1.stderr or "")
             r2_out = (repro2.stdout or "") + (repro2.stderr or "")
             
-            r1_crash = repro1.exit_code == 139 or ("AddressSanitizer" in r1_out and "buffer-overflow" in r1_out)
-            r2_crash = repro2.exit_code == 139 or ("AddressSanitizer" in r2_out and "buffer-overflow" in r2_out)
+            r1_crash = looks_like_sanitizer_crash(repro1)
+            r2_crash = looks_like_sanitizer_crash(repro2)
             
             crash_count = sum([1, 1 if r1_crash else 0, 1 if r2_crash else 0])
             
