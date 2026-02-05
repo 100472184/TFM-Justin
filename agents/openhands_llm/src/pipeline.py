@@ -82,16 +82,20 @@ def run_benchmark(
         )
 
 
+
 def validate_seed(seed_bytes: bytes, extension: str) -> tuple[bool, str]:
     """
     Validate seed structure based on file extension.
-    Supports .tar (via validate_tar_structure) and .json (via validate_json_structure).
+    Supports .tar (via validate_tar_structure), .json (via validate_json_structure), 
+    and .xml (via validate_xml_structure).
     """
     ext = extension.lower()
     if ext == ".tar":
         return validate_tar_structure(seed_bytes)
     elif ext == ".json":
         return validate_json_structure(seed_bytes)
+    elif ext == ".xml":
+        return validate_xml_structure(seed_bytes)
     else:
         # Unknown extension - default to valid (or warning)
         return True, f"Warning: No validator for extension {ext}"
@@ -194,6 +198,37 @@ def validate_tar_structure(seed_bytes: bytes) -> tuple[bool, str]:
             Path(tmp_path).unlink()
         except:
             pass
+
+
+
+def validate_xml_structure(seed_bytes: bytes) -> tuple[bool, str]:
+    """
+    Validate that seed is valid XML.
+    """
+    import xml.etree.ElementTree as ET
+    from io import BytesIO
+    
+    try:
+        if not seed_bytes:
+            return False, "Empty seed"
+            
+        # Parse XML
+        # We use a file-like object because basic strings might have encoding issues
+        parser = ET.XMLParser()
+        tree = ET.parse(BytesIO(seed_bytes), parser)
+        
+        # Check if we have a root element
+        if tree.getroot() is None:
+             return False, "No root element found"
+             
+        # Basic parsing success is enough for structure validation
+        return True, ""
+        
+    except ET.ParseError as e:
+        # Standard XML parse error
+        return False, f"XML Parse Error: {str(e)}"
+    except Exception as e:
+        return False, f"XML validation error: {str(e)}"
 
 
 def run_pipeline(
