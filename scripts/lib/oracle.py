@@ -18,7 +18,9 @@ CRASH_RE = re.compile(
     r"use-after-free|"
     r"double-free|"
     r"SUMMARY: AddressSanitizer|"
-    r"SUMMARY: UndefinedBehaviorSanitizer",
+    r"SUMMARY: UndefinedBehaviorSanitizer|"
+    r"DIFFERENT POINTERS returned|"
+    r"Dictionary corruption confirmed",
     re.IGNORECASE
 )
 
