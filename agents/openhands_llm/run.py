@@ -46,7 +46,6 @@ def main():
     parser.add_argument(
         "--service",
         default="target-vuln",
-        choices=["target-vuln", "target-fixed"],
         help="Docker service to test (default: target-vuln)",
     )
     parser.add_argument(
