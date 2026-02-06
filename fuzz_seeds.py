@@ -8,6 +8,7 @@ PATTERNS = {
 <!DOCTYPE root [
 <!ELEMENT root (xi:include)>
 <!ELEMENT xi:include (#PCDATA)>
+<!ATTLIST root xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude">
 <!ATTLIST xi:include xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude">
 <!ATTLIST xi:include href CDATA #REQUIRED>
 <!ATTLIST xi:include parse CDATA #REQUIRED>
@@ -23,6 +24,7 @@ PATTERNS = {
 <!DOCTYPE root [
 <!ELEMENT root (xi:include+)>
 <!ELEMENT xi:include EMPTY>
+<!ATTLIST root xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude">
 <!ATTLIST xi:include xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude">
 <!ATTLIST xi:include href CDATA #REQUIRED>
 ]>
@@ -33,24 +35,27 @@ PATTERNS = {
         "inc": "<x>I</x>",
         "inc_name": "inc_double.xml"
     },
-    "mixed_backtrack": {
+    "backtrack_correct": {
         "main": """<?xml version="1.0"?>
 <!DOCTYPE root [
-<!ELEMENT root (a, (b | xi:include), c)>
-<!ELEMENT a EMPTY>
-<!ELEMENT b EMPTY>
-<!ELEMENT c EMPTY>
+<!ELEMENT root (a | b | c)*>
+<!ELEMENT a (#PCDATA)>
+<!ELEMENT b (#PCDATA)>
+<!ELEMENT c ANY>
+<!ATTLIST root xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude">
 <!ELEMENT xi:include EMPTY>
 <!ATTLIST xi:include xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude">
 <!ATTLIST xi:include href CDATA #REQUIRED>
 ]>
 <root xmlns:xi="http://www.w3.org/2001/XInclude">
-<a/>
-<xi:include href="inc_mixed.xml"/>
-<c/>
+  <a>first</a>
+  <c>
+    <xi:include href="inc_back.xml"/>
+  </c>
+  <b>last</b>
 </root>""",
-        "inc": "<b/>",
-        "inc_name": "inc_mixed.xml"
+        "inc": "<x>Content</x>",
+        "inc_name": "inc_back.xml"
     }
 }
 
