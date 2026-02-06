@@ -48,7 +48,8 @@ def main():
     internal_seed_path = "/seeds/" + os.path.basename(seed_path)
 
     print(f"Running Vulnerable Version ({VULN_SERVICE})...")
-    cmd_vuln = f"docker compose -f {COMPOSE_FILE} run --rm {VULN_SERVICE} /harness/harness {internal_seed_path}"
+    # Entrypoint is already /harness/harness, so strictly pass only the seed
+    cmd_vuln = f"docker compose -f {COMPOSE_FILE} run --rm {VULN_SERVICE} {internal_seed_path}"
     res_vuln = run_cmd(cmd_vuln)
     
     status_vuln = analyze_output(res_vuln.stderr)
@@ -58,7 +59,7 @@ def main():
         print("[SUCCESS] Vulnerability Reproduced (Use-After-Free)!")
         
         print(f"Running Fixed Version ({FIXED_SERVICE})...")
-        cmd_fixed = f"docker compose -f {COMPOSE_FILE} run --rm {FIXED_SERVICE} /harness/harness {internal_seed_path}"
+        cmd_fixed = f"docker compose -f {COMPOSE_FILE} run --rm {FIXED_SERVICE} {internal_seed_path}"
         res_fixed = run_cmd(cmd_fixed)
         status_fixed = analyze_output(res_fixed.stderr)
         print(f"Fixed Status: {status_fixed}")
