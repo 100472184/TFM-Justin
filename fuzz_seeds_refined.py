@@ -59,7 +59,7 @@ PATTERNS = {
         "inc_name": "inc_text.txt"
     },
 
-    # 3. Recursive include (Self-include)
+    # 3. Recursive include (Fixed filename reference)
     "recursive_death": {
         "main": """<?xml version="1.0"?>
 <!DOCTYPE root [
@@ -70,11 +70,37 @@ PATTERNS = {
 <!ATTLIST xi:include href CDATA #REQUIRED>
 ]>
 <root xmlns:xi="http://www.w3.org/2001/XInclude">
-  <xi:include href="seed_recursive.xml"/>
+  <xi:include href="seed_recursive_death.xml"/>
 </root>""",
-        # This will point to itself (seed_recursive.xml)
         "inc": "", 
-        "inc_name": "dummy.txt" # Not used
+        "inc_name": "dummy.txt"
+    },
+
+    # 4. Backtrack Full (Fully declared DTD)
+    "backtrack_full": {
+        "main": """<?xml version="1.0"?>
+<!DOCTYPE root [
+<!ELEMENT root (a, c, b)>
+<!ELEMENT a (#PCDATA)>
+<!ELEMENT b (#PCDATA)>
+<!ELEMENT c (x)>
+<!ELEMENT x (#PCDATA)>
+<!ATTLIST root xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude">
+<!ELEMENT xi:include EMPTY>
+<!ATTLIST xi:include xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude">
+<!ATTLIST xi:include href CDATA #REQUIRED>
+]>
+<root xmlns:xi="http://www.w3.org/2001/XInclude">
+  <a>first</a>
+  <c>
+    <xi:include href="inc_x.xml"/>
+  </c>
+  <b>last</b>
+</root>""",
+        "inc": """<?xml version="1.0"?>
+<!DOCTYPE x [ <!ELEMENT x (#PCDATA)> ]>
+<x>val</x>""",
+        "inc_name": "inc_x.xml"
     }
 }
 
