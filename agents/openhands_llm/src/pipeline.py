@@ -455,7 +455,7 @@ def run_pipeline(
                 for i, fa in enumerate(failed_attempts[-3:], 1):  # Show last 3
                     feedback_text += f"\nAttempt {fa['attempt']}: {fa['error']}\n"
                     feedback_text += f"  Mutations: {json.dumps(fa['mutations'])}\n"
-                feedback_text += "\n⚠️ Generate DIFFERENT mutations that preserve TAR structure.\n"
+                feedback_text += "\n⚠️ Generate DIFFERENT mutations that preserve valid seed structure.\n"
             
             generate_template = env.get_template("generate.j2")
             generate_prompt = generate_template.render(
