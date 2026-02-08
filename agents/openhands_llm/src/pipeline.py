@@ -63,15 +63,19 @@ def run_benchmark(
         compose_result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            text=False,  # Use bytes to avoid UTF-8 decode errors
             check=False,
             timeout=60
         )
         
+        # Decode with errors='replace' to handle non-UTF8 bytes
+        stdout = compose_result.stdout.decode('utf-8', errors='replace') if compose_result.stdout else ""
+        stderr = compose_result.stderr.decode('utf-8', errors='replace') if compose_result.stderr else ""
+        
         return RunResult(
             exit_code=compose_result.returncode,
-            stdout=compose_result.stdout,
-            stderr=compose_result.stderr
+            stdout=stdout,
+            stderr=stderr
         )
         
     except subprocess.TimeoutExpired:
