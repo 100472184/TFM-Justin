@@ -140,7 +140,7 @@ Iteration {{ result.iteration }}:
    - Set nested value: {"op": "set_json_value", "path": "data.nested.key", "value": true}
    - Replace array: {"op": "set_json_value", "path": "inputs", "value": [123, 456, 789]}
    - Set to null: {"op": "set_json_value", "path": "field", "value": null}
-   Use for: Type confusion vulnerabilities (string→int, string→array, etc.)
+   Use for: Changing JSON value types while preserving structure.
    Note: This is the BEST way to change JSON types while keeping valid structure.
    Path syntax: "key", "key.subkey", "key[0]", "key[0].subkey"
 
