@@ -206,6 +206,104 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
                 data = {key: value_char * length}
                 result = bytearray(json.dumps(data).encode("utf-8"))
         
+        elif op == "set_json_value":
+            # Smart mutation: Set a value at a specific JSON path with proper type handling
+            # This allows changing types (string -> int, etc.) while keeping valid JSON
+            # Examples:
+            #   {"op": "set_json_value", "path": "inputs[0]", "value": 1234567890}
+            #   {"op": "set_json_value", "path": "inputs", "value": [123, 456]}
+            #   {"op": "set_json_value", "path": "data.nested.key", "value": true}
+            path = mut.get("path", "")
+            value = mut.get("value")  # Can be any JSON type: int, float, bool, null, string, array, object
+            
+            import json
+            import re
+            
+            if not path:
+                raise ValueError("set_json_value requires a 'path' argument")
+            
+            try:
+                # Parse existing JSON
+                data = json.loads(result.decode("utf-8", errors="ignore"))
+            except json.JSONDecodeError:
+                raise ValueError("set_json_value requires valid JSON input")
+            
+            # Parse the path and set the value
+            # Supports: "key", "key.subkey", "key[0]", "key[0].subkey", etc.
+            def set_nested_value(obj, path_str, val):
+                # Split path into components
+                # Handle both dot notation and bracket notation
+                # e.g., "inputs[0]" -> ["inputs", 0]
+                # e.g., "data.nested.key" -> ["data", "nested", "key"]
+                parts = []
+                current = ""
+                i = 0
+                while i < len(path_str):
+                    c = path_str[i]
+                    if c == '.':
+                        if current:
+                            parts.append(current)
+                            current = ""
+                    elif c == '[':
+                        if current:
+                            parts.append(current)
+                            current = ""
+                        # Find closing bracket
+                        j = i + 1
+                        while j < len(path_str) and path_str[j] != ']':
+                            j += 1
+                        index_str = path_str[i+1:j]
+                        try:
+                            parts.append(int(index_str))
+                        except ValueError:
+                            parts.append(index_str)  # String key in brackets
+                        i = j
+                    else:
+                        current += c
+                    i += 1
+                if current:
+                    parts.append(current)
+                
+                if not parts:
+                    return val  # Replace entire document
+                
+                # Navigate to parent and set the value
+                current_obj = obj
+                for idx, part in enumerate(parts[:-1]):
+                    if isinstance(part, int):
+                        # Array index
+                        while len(current_obj) <= part:
+                            current_obj.append(None)
+                        if current_obj[part] is None:
+                            # Determine if next part needs array or object
+                            next_part = parts[idx + 1]
+                            current_obj[part] = [] if isinstance(next_part, int) else {}
+                        current_obj = current_obj[part]
+                    else:
+                        # Object key
+                        if part not in current_obj:
+                            next_part = parts[idx + 1]
+                            current_obj[part] = [] if isinstance(next_part, int) else {}
+                        current_obj = current_obj[part]
+                
+                # Set the final value
+                final_key = parts[-1]
+                if isinstance(final_key, int):
+                    while len(current_obj) <= final_key:
+                        current_obj.append(None)
+                    current_obj[final_key] = val
+                else:
+                    current_obj[final_key] = val
+                
+                return obj
+            
+            try:
+                data = set_nested_value(data, path, value)
+                new_json_bytes = json.dumps(data, separators=(',', ':')).encode("utf-8")
+                result = bytearray(new_json_bytes)
+            except Exception as e:
+                raise ValueError(f"set_json_value failed: {e}")
+        
         elif op == "pad_file":
             target_len = mut.get("target_len", 0)
             char = mut.get("char", "A")

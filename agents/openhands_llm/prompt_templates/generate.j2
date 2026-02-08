@@ -134,6 +134,17 @@ Iteration {{ result.iteration }}:
    Example: {"op": "add_json_field", "key": "payload", "length": 1000000, "value_char": "A"}
    Use for: Heap overflows, large input testing. Preserves existing fields if possible.
 
+10. **set_json_value**: Set value at JSON path with proper type handling (SEMANTIC MUTATION)
+   Examples:
+   - Change string to integer: {"op": "set_json_value", "path": "inputs[0]", "value": 1234567890}
+   - Set nested value: {"op": "set_json_value", "path": "data.nested.key", "value": true}
+   - Replace array: {"op": "set_json_value", "path": "inputs", "value": [123, 456, 789]}
+   - Set to null: {"op": "set_json_value", "path": "field", "value": null}
+   Use for: Type confusion vulnerabilities (string→int, string→array, etc.)
+   Note: This is the BEST way to change JSON types while keeping valid structure.
+   Path syntax: "key", "key.subkey", "key[0]", "key[0].subkey"
+
+
 4. **PAYLOAD VARIATION**:
    - Try a wide range of sizes for your mutations.
    - Some bugs require small, precise inputs.
