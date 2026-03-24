@@ -13,3 +13,4 @@ build/
 # OpenHands pipeline outputs
 runs/
 agents/openhands_llama3/.env
+tasks/*.md
