@@ -146,17 +146,17 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             pax_headers = {key: value}
             
             # Create new TAR in memory
-            with io.BytesIO() as f_out:
-                with tarfile.open(fileobj=f_out, mode="w") as tar:
-                    # Create dummy info
-                    info = tarfile.TarInfo("pax_payload")
-                    info.size = 0
-                    info.pax_headers = pax_headers
-                    tar.addfile(info, io.BytesIO(b""))
-                
-                # Replace the ENTIRE seed with this new valid TAR
-                # This intentionally discards previous mutations to ensure validity
-                result = bytearray(new_tar_bytes)
+            buf = io.BytesIO()
+            with tarfile.open(fileobj=buf, mode="w") as tar:
+                # Create dummy info
+                info = tarfile.TarInfo("pax_payload")
+                info.size = 0
+                info.pax_headers = pax_headers
+                tar.addfile(info, io.BytesIO(b""))
+            
+            # Replace the ENTIRE seed with this new valid TAR
+            # This intentionally discards previous mutations to ensure validity
+            result = bytearray(buf.getvalue())
         
         elif op == "add_json_nesting":
             # Smart mutation: Creates deeply nested JSON to trigger recursion limits
