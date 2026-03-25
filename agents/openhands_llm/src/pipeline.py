@@ -300,7 +300,10 @@ def run_pipeline(
         # Check for various seed file formats
         seed_candidates = [
             "base.tar", "base.json", "base.bin",
-            "seed.tar", "seed.json", "seed.bin"
+            "base.yaml", "base.yml", "base.xml", "base.webp",
+            "seed.tar", "seed.json", "seed.bin",
+            "seed.yaml", "seed.yml", "seed.xml", "seed.webp",
+            "seed_pipeline.xml",  # CVE-2024-25062_libxml2 uses this name
         ]
         base_seed = None
         for candidate in seed_candidates:
