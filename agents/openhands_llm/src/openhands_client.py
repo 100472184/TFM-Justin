@@ -8,9 +8,14 @@ from typing import Dict, Optional
 class OpenHandsLLMClient:
     """Wrapper around OpenHands SDK LLM for JSON completions."""
     
-    def __init__(self):
-        """Initialize LLM client from environment variables."""
-        self.model = os.getenv("LLM_MODEL", "vertex_ai/gemini-2.0-flash-001") # Default stable model
+    def __init__(self, model: str = None):
+        """Initialize LLM client from environment variables.
+        
+        Args:
+            model: Optional model override (takes priority over LLM_MODEL env var).
+                   Example: 'ollama/qwen2.5:7b', 'vertex_ai/gemini-2.0-flash-001'
+        """
+        self.model = model or os.getenv("LLM_MODEL", "vertex_ai/gemini-2.0-flash-001")
         self.api_key = os.getenv("LLM_API_KEY", "")
         self.base_url = os.getenv("LLM_BASE_URL", "")
         self.timeout = int(os.getenv("LLM_TIMEOUT", "120"))

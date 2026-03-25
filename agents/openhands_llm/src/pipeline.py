@@ -1,6 +1,7 @@
 """Main pipeline orchestration for ANALYZE → GENERATE → VERIFY loop."""
 from __future__ import annotations
 import json
+import os
 import re
 import subprocess
 import sys
@@ -215,6 +216,36 @@ def validate_xml_structure(seed_bytes: bytes) -> tuple[bool, str]:
     return True, ""
 
 
+def model_to_dirname(model_str: str) -> str:
+    """
+    Sanitize a LiteLLM model identifier into a filesystem-safe directory name.
+    
+    Examples:
+        vertex_ai/gemini-2.0-flash-001 → gemini-2.0-flash
+        ollama/qwen2.5:7b             → qwen2.5-7b
+        ollama/llama3.1:8b            → llama3.1-8b
+        ollama/mistral:7b             → mistral-7b
+        ollama/mistral-nemo:12b       → mistral-nemo-12b
+    """
+    # Strip provider prefix (everything before and including '/')
+    name = model_str.split("/", 1)[-1] if "/" in model_str else model_str
+    
+    # For Vertex AI Gemini models, strip trailing version suffix (-001, -002, etc.)
+    if model_str.startswith("vertex_ai/"):
+        name = re.sub(r"-\d{3}$", "", name)
+    
+    # Replace colon with dash (ollama size notation: qwen2.5:7b → qwen2.5-7b)
+    name = name.replace(":", "-")
+    
+    # Replace any remaining unsafe characters with dash
+    name = re.sub(r"[^a-zA-Z0-9._-]", "-", name)
+    
+    # Collapse multiple dashes
+    name = re.sub(r"-{2,}", "-", name).strip("-")
+    
+    return name
+
+
 def run_pipeline(
     repo_root: Path,
     task_id: str,
@@ -222,29 +253,41 @@ def run_pipeline(
     max_iters: int,
     seed_path: Path,
     service: str = "target-vuln",
+    model: str = None,
     extra_args: List[str] = None
 ) -> Dict[str, Any]:
     """
     Run the complete ANALYZE → GENERATE → VERIFY pipeline.
+    
+    Args:
+        model: Optional LLM model identifier (e.g. 'ollama/qwen2.5:7b').
+               Falls back to LLM_MODEL env var, then vertex_ai/gemini-2.0-flash-001.
     
     Returns:
         Dict with keys: success (bool), iteration (int), run_dir (Path)
     """
     extra_args = extra_args or []
     
-    # Create run directory
+    # Resolve model: CLI arg > env var > default
+    model = model or os.getenv("LLM_MODEL", "vertex_ai/gemini-2.0-flash-001")
+    model_dirname = model_to_dirname(model)
+    
+    # Create run directory: runs/{task_id}/{model_dirname}/{run_id}_{task_id}/
     run_id = now_run_id()
     task_run_dir = f"{run_id}_{task_id}"
-    run_dir = repo_root / "runs" / task_run_dir / task_id
+    run_dir = repo_root / "runs" / task_id / model_dirname / task_run_dir
     ensure_dir(run_dir)
+    
+    print(f"Model:        {model}")
+    print(f"Model Dir:    {model_dirname}")
     
     # Load context
     print(f"Loading context for {task_id} at level {level}...")
     context = load_task_context(repo_root, task_id, level)
     
-    # Initialize LLM client
+    # Initialize LLM client (pass model override)
     print("Initializing LLM client...")
-    llm = OpenHandsLLMClient()
+    llm = OpenHandsLLMClient(model=model)
     
     # Initialize variables
     base_seed = None
@@ -789,6 +832,8 @@ def run_pipeline(
     summary = {
         "task_id": task_id,
         "level": level,
+        "model": model,
+        "model_dirname": model_dirname,
         "max_iters": max_iters,
         "total_iters": len(verify_history),
         "success": success,

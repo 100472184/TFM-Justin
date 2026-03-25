@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -54,11 +55,23 @@ def main():
         default=None,
         help="Path to initial seed file (optional)",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help=(
+            "LLM model identifier (e.g., ollama/qwen2.5:7b, ollama/llama3.1:8b). "
+            "Defaults to LLM_MODEL env var or vertex_ai/gemini-2.0-flash-001"
+        ),
+    )
 
     args = parser.parse_args()
 
     # Get repository root (assumes we're in agents/openhands_llm/)
     repo_root = Path(__file__).parent.parent.parent.resolve()
+
+    # Resolve model for display
+    effective_model = args.model or os.getenv("LLM_MODEL", "vertex_ai/gemini-2.0-flash-001")
 
     print(f"{'='*70}")
     print(f"OpenHands LLM-Based Fuzzing Pipeline")
@@ -68,6 +81,7 @@ def main():
     print(f"Max Iters:    {args.max_iters}")
     print(f"Service:      {args.service}")
     print(f"Seed:         {args.seed or '(random)'}")
+    print(f"Model:        {effective_model}")
     print(f"Repo Root:    {repo_root}")
     print(f"{'='*70}\n")
 
@@ -80,6 +94,7 @@ def main():
             max_iters=args.max_iters,
             seed_path=args.seed,
             service=args.service,
+            model=args.model,
         )
 
         print(f"\n{'='*70}")
