@@ -22,9 +22,9 @@ class OpenHandsLLMClient:
         self.num_retries = int(os.getenv("LLM_NUM_RETRIES", "2"))
         
         # Auto-set base_url for ollama models
-        # Priority: LLM_BASE_URL > OLLAMA_API_BASE > fallback localhost
+        # Priority: LLM_BASE_URL > OLLAMA_API_BASE > OLLAMA_HOST > fallback localhost
         if self.model.startswith("ollama/") and not self.base_url:
-            self.base_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+            self.base_url = os.getenv("OLLAMA_API_BASE") or os.getenv("OLLAMA_HOST") or "http://localhost:11434"
             
         # Determine if this is a Vertex AI model
         is_vertex = self.model.startswith("vertex_ai/")
