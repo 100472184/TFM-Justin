@@ -324,6 +324,22 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
                 
                 result.extend(pad_byte * padding_len)
         
+        elif op == "insert_zlib_payload":
+            # Smart mutation for CVE-2016-5314: Compresses a payload via zlib and inserts it at offset
+            offset = mut.get("offset", 0)
+            payload_str = mut.get("payload", "A" * 10000)
+            
+            import zlib
+            # Compress the payload with Zlib deflate
+            compressed_bytes = zlib.compress(payload_str.encode("utf-8"))
+            
+            # Insert the newly compressed valid binary blob at the offset
+            if offset <= len(result):
+                result[offset:offset] = compressed_bytes
+            else:
+                result.extend(b'\x00' * (offset - len(result)))
+                result.extend(compressed_bytes)
+
         else:
             raise ValueError(f"Unknown mutation operation: {op}")
         
