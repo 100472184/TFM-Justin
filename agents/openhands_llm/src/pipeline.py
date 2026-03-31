@@ -79,11 +79,13 @@ def run_benchmark(
             stderr=stderr
         )
         
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        stdout = e.stdout.decode('utf-8', errors='replace') if hasattr(e, 'stdout') and e.stdout else ""
+        stderr = e.stderr.decode('utf-8', errors='replace') if hasattr(e, 'stderr') and e.stderr else ""
         return RunResult(
             exit_code=124,  # Standard timeout exit code
-            stdout="",
-            stderr="Timeout: container did not finish in 60 seconds"
+            stdout=stdout,
+            stderr=f"{stderr}\n[Timeout: container did not finish in 60 seconds]"
         )
 
 
