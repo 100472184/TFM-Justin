@@ -144,6 +144,11 @@ Iteration {{ result.iteration }}:
    Note: This is the BEST way to change JSON types while keeping valid structure.
    Path syntax: "key", "key.subkey", "key[0]", "key[0].subkey"
 
+11. **insert_zlib_payload**: Automatically constructs a deeply compressed zlib block and natively inserts it.
+    Example: {"op": "insert_zlib_payload", "offset": 200}
+    Use for: Triggers overflow on zlib-decompression parsers or testing compressed stream handling.
+    CRITICAL: Do NOT manually specify the payload! The backend script will automatically generate and inject the `zlib("A" * 10000)` blob. Just specify the `offset` where the stream should begin!
+
 
 4. **PAYLOAD VARIATION**:
    - Try a wide range of sizes for your mutations.
