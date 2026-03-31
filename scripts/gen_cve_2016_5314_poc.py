@@ -44,7 +44,8 @@ def build_poc():
         (273, 4, num_strips, strip_offsets_offset),
         (277, 3, 1, 3),             # SamplesPerPixel: 3
         (278, 4, 1, 1),             # RowsPerStrip: 1
-        (279, 4, num_strips, strip_bytecounts_offset)
+        (279, 4, num_strips, strip_bytecounts_offset),
+        (317, 3, 1, 2)              # Predictor: 2 (horizontal)
     ]
 
     ifd = struct.pack("<H", len(entries))
