@@ -340,6 +340,34 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
                 result.extend(b'\x00' * (offset - len(result)))
                 result.extend(compressed_bytes)
 
+        elif op == "append_swf_tag":
+            # Smart mutation: Appends a tag to an SWF, patches the main file length, and preserves EOF
+            tag_type = mut.get("tag_type", 24)
+            payload_hex = mut.get("payload_hex", "41414141") # Hex payload WITHOUT null byte
+            
+            try:
+                payload = bytes.fromhex(payload_hex)
+            except ValueError:
+                payload = b'A' * 4
+                
+            import struct
+            # Usar Short Tag Header (asumimos payload < 63 para este exploit simple)
+            tag_length = len(payload)
+            tag_header = struct.pack('<H', (tag_type << 6) | tag_length)
+            
+            # Buscar si termina correctamente en SWF_END (00 00) y quitarlo temporalmente
+            if len(result) >= 2 and result[-2:] == b'\x00\x00':
+                del result[-2:]
+                
+            # Anexar el tag + el payload malicioso + restaurar SWF_END
+            result.extend(tag_header)
+            result.extend(payload)
+            result.extend(b'\x00\x00')
+            
+            # Actualizar el atributo total length (bytes 4-7)
+            if len(result) >= 8:
+                struct.pack_into('<I', result, 4, len(result))
+
         else:
             raise ValueError(f"Unknown mutation operation: {op}")
         

@@ -149,7 +149,9 @@ Iteration {{ result.iteration }}:
     Use for: Triggers overflow on zlib-decompression parsers or testing compressed stream handling.
     CRITICAL: Do NOT manually specify the payload! The backend script will automatically generate and inject the `zlib("A" * 10000)` blob. Just specify the `offset` where the stream should begin!
 
-
+12. **append_swf_tag**: Appends a malformed SWF tag to an SWF file and safely recalculates the header length field.
+    Example: {"op": "append_swf_tag", "tag_type": 24, "payload_hex": "4141414141414141"}
+    Use for: Defeating strict SWF parsers without corrupting the delicate bit-packed RECT and frame structure at the beginning of the file.
 4. **PAYLOAD VARIATION**:
    - Try a wide range of sizes for your mutations.
    - Some bugs require small, precise inputs.
