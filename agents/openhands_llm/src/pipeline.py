@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Any
 from jinja2 import Environment, FileSystemLoader
@@ -525,16 +526,95 @@ def run_pipeline(
             tried_sizes=tried_sizes_str
         )
         
-        try:
-            analysis = llm.completion_json(
-                schema_name="analyze",
-                system_prompt="You are a security researcher analyzing CVE vulnerabilities for academic research.",
-                user_prompt=analyze_prompt
+        # ANALYZE with retry/backoff: transient LLM/network failures should not end the full run
+        max_analyze_attempts = 3
+        analysis = None
+        analyze_error = None
+        analyze_failures = []
+        for analyze_attempt in range(1, max_analyze_attempts + 1):
+            try:
+                analysis = llm.completion_json(
+                    schema_name="analyze",
+                    system_prompt="You are a security researcher analyzing CVE vulnerabilities for academic research.",
+                    user_prompt=analyze_prompt
+                )
+                if analyze_attempt > 1:
+                    print(f"  ✓ ANALYZE recovered on attempt {analyze_attempt}/{max_analyze_attempts}")
+                break
+            except Exception as e:
+                analyze_error = str(e)
+                analyze_failures.append({
+                    "attempt": analyze_attempt,
+                    "error": analyze_error
+                })
+                print(f"  ERROR: ANALYZE failed (attempt {analyze_attempt}/{max_analyze_attempts}): {e}")
+                if analyze_attempt < max_analyze_attempts:
+                    backoff_seconds = min(2 ** (analyze_attempt - 1), 8)
+                    print(f"  Retrying ANALYZE in {backoff_seconds}s...")
+                    time.sleep(backoff_seconds)
+        
+        if analysis is None:
+            notes = f"ANALYZE failed after {max_analyze_attempts} attempts: {analyze_error}"
+            print(f"  {notes}")
+            print("  Skipping GENERATE/VERIFY for this iteration")
+            
+            write_text(
+                iter_dir / "analysis.json",
+                json.dumps(
+                    {
+                        "error": notes,
+                        "attempts": analyze_failures
+                    },
+                    indent=2
+                )
             )
-        except Exception as e:
-            print(f"  ERROR: ANALYZE phase failed: {e}")
-            print(f"  Stopping pipeline at iteration {iteration}")
-            return {"success": False, "iteration": iteration - 1, "run_dir": run_dir, "error": f"ANALYZE failed: {str(e)}"}
+            write_text(
+                iter_dir / "generate.json",
+                json.dumps(
+                    {
+                        "skipped": True,
+                        "reason": "ANALYZE failed",
+                        "analyze_failures": analyze_failures
+                    },
+                    indent=2
+                )
+            )
+            
+            verify_result = {
+                "vuln_exit_code": None,
+                "vuln_stdout": "",
+                "vuln_stderr": "",
+                "vuln_crashes": False,
+                "fixed_exit_code": None,
+                "fixed_stdout": "",
+                "fixed_stderr": "",
+                "fixed_crashes": False,
+                "success": False,
+                "notes": notes,
+                "mutation_applied": False,
+                "mutation_error": "ANALYZE failed"
+            }
+            write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
+            
+            verify_history.append({
+                "iteration": iteration,
+                "vuln_crashes": False,
+                "fixed_crashes": False,
+                "vuln_exit_code": None,
+                "fixed_exit_code": None,
+                "success": False,
+                "notes": notes,
+                "mutations_applied": [],
+                "failed_attempts": analyze_failures,
+                "mutation_success": False,
+                "mutation_error": "ANALYZE failed",
+                "vuln_stderr_preview": "",
+                "fixed_stderr_preview": ""
+            })
+            
+            if kill_running_containers_after_iter:
+                kill_all_running_containers_after_iteration(iteration)
+            continue
         
         write_text(iter_dir / "analysis.json", json.dumps(analysis, indent=2))
         print(f"  Summary: {analysis.get('summary', 'N/A')[:100]}...")
