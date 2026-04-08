@@ -64,6 +64,14 @@ def main():
             "Defaults to LLM_MODEL env var or vertex_ai/gemini-2.0-flash-001"
         ),
     )
+    parser.add_argument(
+        "--kill-running-containers-after-iter",
+        action="store_true",
+        help=(
+            "Kill all running Docker containers after each iteration "
+            "(equivalent to docker kill $(docker ps -q)). Disabled by default."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -82,6 +90,7 @@ def main():
     print(f"Service:      {args.service}")
     print(f"Seed:         {args.seed or '(random)'}")
     print(f"Model:        {effective_model}")
+    print(f"Kill Docker:  {args.kill_running_containers_after_iter}")
     print(f"Repo Root:    {repo_root}")
     print(f"{'='*70}\n")
 
@@ -95,6 +104,7 @@ def main():
             seed_path=args.seed,
             service=args.service,
             model=args.model,
+            kill_running_containers_after_iter=args.kill_running_containers_after_iter,
         )
 
         print(f"\n{'='*70}")

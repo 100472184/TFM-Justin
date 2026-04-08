@@ -89,6 +89,65 @@ def run_benchmark(
         )
 
 
+def kill_all_running_containers_after_iteration(iteration: int) -> None:
+    """
+    Best-effort cleanup equivalent to: docker kill $(docker ps -q)
+
+    This is intentionally non-fatal: cleanup failures should not stop the run.
+    """
+    print(f"  Docker cleanup after iteration {iteration}: checking running containers...")
+
+    try:
+        ps_result = subprocess.run(
+            ["docker", "ps", "-q"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15
+        )
+    except FileNotFoundError:
+        print("  Warning: docker not found; skipping post-iteration cleanup.")
+        return
+    except subprocess.TimeoutExpired:
+        print("  Warning: docker ps timed out; skipping post-iteration cleanup.")
+        return
+    except Exception as e:
+        print(f"  Warning: unexpected docker cleanup error: {e}")
+        return
+
+    if ps_result.returncode != 0:
+        stderr = (ps_result.stderr or "").strip()
+        print(f"  Warning: docker ps failed (exit_code={ps_result.returncode}): {stderr[:200]}")
+        return
+
+    container_ids = [line.strip() for line in ps_result.stdout.splitlines() if line.strip()]
+    if not container_ids:
+        print("  Docker cleanup: no running containers.")
+        return
+
+    try:
+        kill_result = subprocess.run(
+            ["docker", "kill", *container_ids],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30
+        )
+    except subprocess.TimeoutExpired:
+        print("  Warning: docker kill timed out.")
+        return
+    except Exception as e:
+        print(f"  Warning: docker kill failed: {e}")
+        return
+
+    if kill_result.returncode != 0:
+        stderr = (kill_result.stderr or "").strip()
+        print(f"  Warning: docker kill failed (exit_code={kill_result.returncode}): {stderr[:200]}")
+        return
+
+    print(f"  Docker cleanup: killed {len(container_ids)} container(s).")
+
+
 
 def validate_seed(seed_bytes: bytes, extension: str) -> tuple[bool, str]:
     """
@@ -256,7 +315,8 @@ def run_pipeline(
     seed_path: Path,
     service: str = "target-vuln",
     model: str = None,
-    extra_args: List[str] = None
+    extra_args: List[str] = None,
+    kill_running_containers_after_iter: bool = False
 ) -> Dict[str, Any]:
     """
     Run the complete ANALYZE → GENERATE → VERIFY pipeline.
@@ -264,6 +324,8 @@ def run_pipeline(
     Args:
         model: Optional LLM model identifier (e.g. 'ollama/qwen2.5:7b').
                Falls back to LLM_MODEL env var, then vertex_ai/gemini-2.0-flash-001.
+        kill_running_containers_after_iter:
+               If True, kill all running Docker containers after each iteration.
     
     Returns:
         Dict with keys: success (bool), iteration (int), run_dir (Path)
@@ -282,6 +344,7 @@ def run_pipeline(
     
     print(f"Model:        {model}")
     print(f"Model Dir:    {model_dirname}")
+    print(f"Kill Docker:  {kill_running_containers_after_iter}")
     
     # Load context
     print(f"Loading context for {task_id} at level {level}...")
@@ -479,6 +542,8 @@ def run_pipeline(
         # Check for early stop
         if analysis.get("stop_early", False):
             print("  LLM requested early stop")
+            if kill_running_containers_after_iter:
+                kill_all_running_containers_after_iteration(iteration)
             break
         
         # ===== PHASE 2: GENERATE =====
@@ -674,6 +739,8 @@ def run_pipeline(
             })
             
             # Skip VERIFY phase and continue to next iteration
+            if kill_running_containers_after_iter:
+                kill_all_running_containers_after_iteration(iteration)
             continue
         
         # Save new seed only if mutation succeeded
@@ -684,12 +751,6 @@ def run_pipeline(
         
         # ===== PHASE 3: VERIFY =====
         print("\n→ VERIFY")
-        
-        # No cleanup needed between iterations:
-        # - --rm auto-removes containers after each run
-        # - network_mode: none means no network state
-        # - No volumes declared in compose.yml
-        # Each run is completely isolated and ephemeral
         
         # Project name for namespacing (prevents collisions with parallel runs)
         # Sanitize: lowercase, replace invalid chars, limit length
@@ -831,7 +892,12 @@ def run_pipeline(
         if verify_result["success"]:
             print(f"\n🎉 SUCCESS! CVE-specific crash detected in iteration {iteration}")
             success = True
+            if kill_running_containers_after_iter:
+                kill_all_running_containers_after_iteration(iteration)
             break
+
+        if kill_running_containers_after_iter:
+            kill_all_running_containers_after_iteration(iteration)
     
     # ===== SUMMARY =====
     summary = {
