@@ -22,6 +22,7 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
     - truncate: {"op": "truncate", "new_len": 200}
     - repeat_range: {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
     - insert_repeated_bytes: {"op": "insert_repeated_bytes", "offset": 20, "hex": "41", "times": 1000}
+    - add_exif_subifd_loop: {"op": "add_exif_subifd_loop", "subifd_count": 4, "loop_target_offset": 8}
     """
     result = bytearray(seed_bytes)
     
@@ -131,6 +132,67 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             
             # Insert at offset using slice assignment (efficient)
             result[offset:offset] = payload
+
+        elif op == "add_exif_subifd_loop":
+            # Smart mutation for Exiv2 metadata-write bugs:
+            # Insert a crafted APP1/Exif segment with a SubIFD offset array that can self-reference.
+            # This keeps JPEG structure mostly valid while creating suspicious TIFF graph topology.
+            subifd_count = int(mut.get("subifd_count", 4))
+            loop_target_offset = int(mut.get("loop_target_offset", 8))  # TIFF-relative
+            make = mut.get("make", "CAM")
+
+            # Keep values bounded to avoid malformed segment sizes and keep mutation deterministic.
+            if subifd_count < 1:
+                subifd_count = 1
+            if subifd_count > 128:
+                subifd_count = 128
+            if loop_target_offset < 8 or loop_target_offset > 0xFFFFFFFF:
+                loop_target_offset = 8
+
+            if not isinstance(make, str):
+                make = "CAM"
+            make_ascii = make.encode("ascii", errors="ignore")[:3]
+            if not make_ascii:
+                make_ascii = b"CAM"
+            make_inline = (make_ascii + b"\x00")[:4].ljust(4, b"\x00")
+
+            import struct
+
+            # TIFF header (little-endian): byte-order, magic, IFD0 offset.
+            tiff_header = b"II*\x00\x08\x00\x00\x00"
+
+            # Build IFD0:
+            #  - Entry 0: SubIFDs (tag 0x014A), type LONG, count=subifd_count, points to array.
+            #  - Entry 1: Make (tag 0x010F), type ASCII, inline 4-byte value.
+            entry_count = 2
+            ifd0_size = 2 + (entry_count * 12) + 4
+            subifd_array_offset = 8 + ifd0_size  # TIFF-relative offset from TIFF header start.
+
+            entry_subifd = struct.pack("<HHII", 0x014A, 4, subifd_count, subifd_array_offset)
+            entry_make = struct.pack("<HHI", 0x010F, 2, 4) + make_inline
+            ifd0 = struct.pack("<H", entry_count) + entry_subifd + entry_make + struct.pack("<I", 0)
+
+            subifd_array = b"".join(struct.pack("<I", loop_target_offset) for _ in range(subifd_count))
+            exif_body = b"Exif\x00\x00" + tiff_header + ifd0 + subifd_array
+
+            # APP1 length includes the 2-byte length field itself.
+            app1_len = len(exif_body) + 2
+            if app1_len > 0xFFFF:
+                raise ValueError(f"add_exif_subifd_loop produced APP1 segment too large: {app1_len}")
+            app1_segment = b"\xFF\xE1" + struct.pack(">H", app1_len) + exif_body
+
+            # If current seed looks like JPEG, inject after SOI (or after first APPn segment when present).
+            if len(result) >= 2 and result[0] == 0xFF and result[1] == 0xD8:
+                insert_at = 2
+                if len(result) >= 6 and result[2] == 0xFF and 0xE0 <= result[3] <= 0xEF:
+                    seg_len = (result[4] << 8) | result[5]
+                    seg_end = 2 + 2 + seg_len
+                    if seg_len >= 2 and seg_end <= len(result):
+                        insert_at = seg_end
+                result = bytearray(bytes(result[:insert_at]) + app1_segment + bytes(result[insert_at:]))
+            else:
+                # Fallback: construct minimal JPEG envelope.
+                result = bytearray(b"\xFF\xD8" + app1_segment + b"\xFF\xD9")
         
         elif op == "add_pax_header":
             # Smart mutation: Uses tarfile to rebuild the archive with a new PAX header

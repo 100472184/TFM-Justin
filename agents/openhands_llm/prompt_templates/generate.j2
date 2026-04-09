@@ -153,6 +153,15 @@ Iteration {{ result.iteration }}:
     Example: {"op": "append_swf_tag", "tag_type": 9, "payload_hex": "4141414141414141"} 
     *(Note: Tag 9 is a benign example (SetBackgroundColor). Always choose the appropriate `tag_type` for the specific vulnerability you are testing!)*
     Use for: Defeating strict SWF parsers without corrupting the delicate bit-packed RECT and frame structure at the beginning of the file.
+
+13. **add_exif_subifd_loop**: Inserts a crafted APP1/Exif segment with SubIFD offsets that can self-reference.
+    Example: {"op": "add_exif_subifd_loop", "subifd_count": 4, "loop_target_offset": 8, "make": "CAM"}
+    Use for: Exif/TIFF metadata write-path bugs (e.g., Exiv2) where graph-like IFD/SubIFD topology can trigger parser/encoder defects.
+    Notes:
+    - `subifd_count` controls how many LONG offsets are emitted in the SubIFD array (bounded internally).
+    - `loop_target_offset` is TIFF-relative (default `8`, i.e., points near IFD0), useful for cyclic/recursive structures.
+    - If input is JPEG, segment is injected after SOI (or after first APPn when present); otherwise a minimal JPEG wrapper is built.
+
 4. **PAYLOAD VARIATION**:
    - Try a wide range of sizes for your mutations.
    - Some bugs require small, precise inputs.
