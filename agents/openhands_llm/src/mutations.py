@@ -59,10 +59,13 @@ def _build_ifd_with_next(software_ascii: bytes, next_ifd_offset: int) -> bytes:
     return struct.pack("<H", entry_count) + tag_software + struct.pack("<I", next_ifd_offset)
 
 
-def _build_exif_subifd_chain_segment(subifd_count: int, close_loop: bool, make: object) -> bytes:
+def _build_exif_subifd_chain_segment(subifd_count: int, next_mode: str, make: object) -> bytes:
     """
-    Build APP1/Exif with SubIFD array pointing to a chain of tiny child IFDs.
-    If close_loop=True, the last child points back to the first child.
+    Build APP1/Exif with SubIFD array pointing to tiny child IFDs.
+    next_mode controls each child IFD "next" pointer:
+    - "zero": every child next pointer is 0
+    - "chain": child[i] -> child[i+1], last -> 0
+    - "loop": child[i] -> child[i+1], last -> child[0]
     """
     if subifd_count < 1:
         subifd_count = 1
@@ -85,12 +88,17 @@ def _build_exif_subifd_chain_segment(subifd_count: int, close_loop: bool, make: 
     child_offsets = [child0_offset + i * child_size for i in range(subifd_count)]
     subifd_array = b"".join(struct.pack("<I", off) for off in child_offsets)
 
+    if next_mode not in {"zero", "chain", "loop"}:
+        next_mode = "chain"
+
     children = []
     for i in range(subifd_count):
-        if i < subifd_count - 1:
-            nxt = child_offsets[i + 1]
-        else:
-            nxt = child_offsets[0] if close_loop else 0
+        if next_mode == "zero":
+            nxt = 0
+        elif next_mode == "loop":
+            nxt = child_offsets[i + 1] if i < subifd_count - 1 else child_offsets[0]
+        else:  # chain
+            nxt = child_offsets[i + 1] if i < subifd_count - 1 else 0
         children.append(_build_ifd_with_next(b"SW\x00\x00", nxt))
 
     exif_body = b"Exif\x00\x00" + tiff_header + ifd0 + subifd_array + b"".join(children)
@@ -126,7 +134,7 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
     - repeat_range: {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
     - insert_repeated_bytes: {"op": "insert_repeated_bytes", "offset": 20, "hex": "41", "times": 1000}
     - add_exif_subifd_loop: {"op": "add_exif_subifd_loop", "subifd_count": 4, "loop_target_offset": 8}
-    - add_exif_subifd_chain: {"op": "add_exif_subifd_chain", "subifd_count": 8, "close_loop": true}
+    - add_exif_subifd_chain: {"op": "add_exif_subifd_chain", "subifd_count": 8, "close_loop": true, "next_mode": "loop"}
     """
     result = bytearray(seed_bytes)
     
@@ -256,10 +264,17 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
                 close_loop = close_loop_raw.strip().lower() in {"1", "true", "yes", "y"}
             else:
                 close_loop = bool(close_loop_raw)
+            next_mode_raw = mut.get("next_mode")
+            if isinstance(next_mode_raw, str):
+                next_mode = next_mode_raw.strip().lower()
+            else:
+                next_mode = "loop" if close_loop else "chain"
+            if next_mode not in {"zero", "chain", "loop"}:
+                next_mode = "loop" if close_loop else "chain"
             make = mut.get("make", "CAM")
             app1_segment = _build_exif_subifd_chain_segment(
                 subifd_count=subifd_count,
-                close_loop=close_loop,
+                next_mode=next_mode,
                 make=make,
             )
             result = bytearray(_inject_app1_segment(bytes(result), app1_segment))

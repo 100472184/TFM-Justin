@@ -164,10 +164,14 @@ Iteration {{ result.iteration }}:
     - If input is JPEG, segment is injected after SOI (or after first APPn when present); otherwise a minimal JPEG wrapper is built.
 
 14. **add_exif_subifd_chain**: Inserts APP1/Exif with a chain of child SubIFDs (optionally cyclic).
-    Example: {"op": "add_exif_subifd_chain", "subifd_count": 8, "close_loop": true, "make": "CAM"}
+    Example: {"op": "add_exif_subifd_chain", "subifd_count": 8, "close_loop": true, "next_mode": "loop", "make": "CAM"}
     Use for: Building deeper TIFF graph traversal than the simple self-loop variant.
     Notes:
     - `close_loop=true` links the last child back to the first child.
+    - `next_mode` can be:
+      - `"zero"`: all child next pointers are 0 (good to avoid early `unexpected next pointer` sanitization)
+      - `"chain"`: linear child-next chain
+      - `"loop"`: linear chain with last -> first loop
     - Works best when combined with small `overwrite_range` perturbations near APP1/TIFF metadata fields.
 
 4. **PAYLOAD VARIATION**:
