@@ -157,10 +157,18 @@ Iteration {{ result.iteration }}:
 13. **add_exif_subifd_loop**: Inserts a crafted APP1/Exif segment with SubIFD offsets that can self-reference.
     Example: {"op": "add_exif_subifd_loop", "subifd_count": 4, "loop_target_offset": 8, "make": "CAM"}
     Use for: Exif/TIFF metadata write-path bugs (e.g., Exiv2) where graph-like IFD/SubIFD topology can trigger parser/encoder defects.
+    *(Note: Example above is a benign topology. For stronger fuzzing, combine this op with targeted `overwrite_range` edits around the injected SubIFD array and IFD offsets.)*
     Notes:
     - `subifd_count` controls how many LONG offsets are emitted in the SubIFD array (bounded internally).
     - `loop_target_offset` is TIFF-relative (default `8`, i.e., points near IFD0), useful for cyclic/recursive structures.
     - If input is JPEG, segment is injected after SOI (or after first APPn when present); otherwise a minimal JPEG wrapper is built.
+
+14. **add_exif_subifd_chain**: Inserts APP1/Exif with a chain of child SubIFDs (optionally cyclic).
+    Example: {"op": "add_exif_subifd_chain", "subifd_count": 8, "close_loop": true, "make": "CAM"}
+    Use for: Building deeper TIFF graph traversal than the simple self-loop variant.
+    Notes:
+    - `close_loop=true` links the last child back to the first child.
+    - Works best when combined with small `overwrite_range` perturbations near APP1/TIFF metadata fields.
 
 4. **PAYLOAD VARIATION**:
    - Try a wide range of sizes for your mutations.

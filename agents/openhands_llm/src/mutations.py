@@ -1,6 +1,7 @@
 """Seed mutation operations for fuzzing."""
 from __future__ import annotations
 from typing import List, Dict
+import struct
 
 MAX_SEED_SIZE = 20 * 1024 * 1024  # 20MB limit (needed for CVE-2023-39804)
 
@@ -9,6 +10,108 @@ def validate_hex_string(hex_str: str, operation: str) -> None:
     """Validate hex string has even length before fromhex()."""
     if len(hex_str) % 2 != 0:
         raise ValueError(f"Invalid hex in {operation}: {hex_str} (odd length: {len(hex_str)} chars)")
+
+
+def _normalize_make(make: object) -> bytes:
+    """Normalize camera make marker to a 4-byte inline ASCII field."""
+    if not isinstance(make, str):
+        make = "CAM"
+    make_ascii = make.encode("ascii", errors="ignore")[:3]
+    if not make_ascii:
+        make_ascii = b"CAM"
+    return (make_ascii + b"\x00")[:4].ljust(4, b"\x00")
+
+
+def _build_exif_subifd_loop_segment(subifd_count: int, loop_target_offset: int, make: object) -> bytes:
+    """
+    Build APP1/Exif with IFD0 containing a SubIFDs array where each entry points to loop_target_offset.
+    """
+    if subifd_count < 1:
+        subifd_count = 1
+    if subifd_count > 128:
+        subifd_count = 128
+    if loop_target_offset < 8 or loop_target_offset > 0xFFFFFFFF:
+        loop_target_offset = 8
+
+    make_inline = _normalize_make(make)
+    tiff_header = b"II*\x00\x08\x00\x00\x00"
+
+    # IFD0: SubIFDs + Make
+    entry_count = 2
+    ifd0_size = 2 + (entry_count * 12) + 4
+    subifd_array_offset = 8 + ifd0_size
+    entry_subifd = struct.pack("<HHII", 0x014A, 4, subifd_count, subifd_array_offset)
+    entry_make = struct.pack("<HHI", 0x010F, 2, 4) + make_inline
+    ifd0 = struct.pack("<H", entry_count) + entry_subifd + entry_make + struct.pack("<I", 0)
+    subifd_array = b"".join(struct.pack("<I", loop_target_offset) for _ in range(subifd_count))
+
+    exif_body = b"Exif\x00\x00" + tiff_header + ifd0 + subifd_array
+    app1_len = len(exif_body) + 2
+    if app1_len > 0xFFFF:
+        raise ValueError(f"add_exif_subifd_loop produced APP1 segment too large: {app1_len}")
+    return b"\xFF\xE1" + struct.pack(">H", app1_len) + exif_body
+
+
+def _build_ifd_with_next(software_ascii: bytes, next_ifd_offset: int) -> bytes:
+    """Build a single-entry child IFD with a controlled next pointer."""
+    entry_count = 1
+    tag_software = struct.pack("<HHI", 0x0131, 2, 4) + software_ascii[:4].ljust(4, b"\x00")
+    return struct.pack("<H", entry_count) + tag_software + struct.pack("<I", next_ifd_offset)
+
+
+def _build_exif_subifd_chain_segment(subifd_count: int, close_loop: bool, make: object) -> bytes:
+    """
+    Build APP1/Exif with SubIFD array pointing to a chain of tiny child IFDs.
+    If close_loop=True, the last child points back to the first child.
+    """
+    if subifd_count < 1:
+        subifd_count = 1
+    if subifd_count > 64:
+        subifd_count = 64
+
+    make_inline = _normalize_make(make)
+    tiff_header = b"II*\x00\x08\x00\x00\x00"
+
+    # IFD0: SubIFDs + Make
+    entry_count = 2
+    ifd0_size = 2 + entry_count * 12 + 4
+    subifd_array_offset = 8 + ifd0_size
+    child0_offset = subifd_array_offset + (4 * subifd_count)
+    entry_subifd = struct.pack("<HHII", 0x014A, 4, subifd_count, subifd_array_offset)
+    entry_make = struct.pack("<HHI", 0x010F, 2, 4) + make_inline
+    ifd0 = struct.pack("<H", entry_count) + entry_subifd + entry_make + struct.pack("<I", 0)
+
+    child_size = 2 + 12 + 4  # single-entry child IFD
+    child_offsets = [child0_offset + i * child_size for i in range(subifd_count)]
+    subifd_array = b"".join(struct.pack("<I", off) for off in child_offsets)
+
+    children = []
+    for i in range(subifd_count):
+        if i < subifd_count - 1:
+            nxt = child_offsets[i + 1]
+        else:
+            nxt = child_offsets[0] if close_loop else 0
+        children.append(_build_ifd_with_next(b"SW\x00\x00", nxt))
+
+    exif_body = b"Exif\x00\x00" + tiff_header + ifd0 + subifd_array + b"".join(children)
+    app1_len = len(exif_body) + 2
+    if app1_len > 0xFFFF:
+        raise ValueError(f"add_exif_subifd_chain produced APP1 segment too large: {app1_len}")
+    return b"\xFF\xE1" + struct.pack(">H", app1_len) + exif_body
+
+
+def _inject_app1_segment(seed: bytes, app1_segment: bytes) -> bytes:
+    """Inject APP1 after SOI (or after first APPn when present)."""
+    if len(seed) >= 2 and seed[0] == 0xFF and seed[1] == 0xD8:
+        insert_at = 2
+        if len(seed) >= 6 and seed[2] == 0xFF and 0xE0 <= seed[3] <= 0xEF:
+            seg_len = (seed[4] << 8) | seed[5]
+            seg_end = 2 + 2 + seg_len
+            if seg_len >= 2 and seg_end <= len(seed):
+                insert_at = seg_end
+        return bytes(seed[:insert_at]) + app1_segment + bytes(seed[insert_at:])
+    # Fallback for non-JPEG seeds: build minimal envelope.
+    return b"\xFF\xD8" + app1_segment + b"\xFF\xD9"
 
 
 def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
@@ -23,6 +126,7 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
     - repeat_range: {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
     - insert_repeated_bytes: {"op": "insert_repeated_bytes", "offset": 20, "hex": "41", "times": 1000}
     - add_exif_subifd_loop: {"op": "add_exif_subifd_loop", "subifd_count": 4, "loop_target_offset": 8}
+    - add_exif_subifd_chain: {"op": "add_exif_subifd_chain", "subifd_count": 8, "close_loop": true}
     """
     result = bytearray(seed_bytes)
     
@@ -134,65 +238,31 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             result[offset:offset] = payload
 
         elif op == "add_exif_subifd_loop":
-            # Smart mutation for Exiv2 metadata-write bugs:
-            # Insert a crafted APP1/Exif segment with a SubIFD offset array that can self-reference.
-            # This keeps JPEG structure mostly valid while creating suspicious TIFF graph topology.
             subifd_count = int(mut.get("subifd_count", 4))
             loop_target_offset = int(mut.get("loop_target_offset", 8))  # TIFF-relative
             make = mut.get("make", "CAM")
+            app1_segment = _build_exif_subifd_loop_segment(
+                subifd_count=subifd_count,
+                loop_target_offset=loop_target_offset,
+                make=make,
+            )
+            result = bytearray(_inject_app1_segment(bytes(result), app1_segment))
 
-            # Keep values bounded to avoid malformed segment sizes and keep mutation deterministic.
-            if subifd_count < 1:
-                subifd_count = 1
-            if subifd_count > 128:
-                subifd_count = 128
-            if loop_target_offset < 8 or loop_target_offset > 0xFFFFFFFF:
-                loop_target_offset = 8
-
-            if not isinstance(make, str):
-                make = "CAM"
-            make_ascii = make.encode("ascii", errors="ignore")[:3]
-            if not make_ascii:
-                make_ascii = b"CAM"
-            make_inline = (make_ascii + b"\x00")[:4].ljust(4, b"\x00")
-
-            import struct
-
-            # TIFF header (little-endian): byte-order, magic, IFD0 offset.
-            tiff_header = b"II*\x00\x08\x00\x00\x00"
-
-            # Build IFD0:
-            #  - Entry 0: SubIFDs (tag 0x014A), type LONG, count=subifd_count, points to array.
-            #  - Entry 1: Make (tag 0x010F), type ASCII, inline 4-byte value.
-            entry_count = 2
-            ifd0_size = 2 + (entry_count * 12) + 4
-            subifd_array_offset = 8 + ifd0_size  # TIFF-relative offset from TIFF header start.
-
-            entry_subifd = struct.pack("<HHII", 0x014A, 4, subifd_count, subifd_array_offset)
-            entry_make = struct.pack("<HHI", 0x010F, 2, 4) + make_inline
-            ifd0 = struct.pack("<H", entry_count) + entry_subifd + entry_make + struct.pack("<I", 0)
-
-            subifd_array = b"".join(struct.pack("<I", loop_target_offset) for _ in range(subifd_count))
-            exif_body = b"Exif\x00\x00" + tiff_header + ifd0 + subifd_array
-
-            # APP1 length includes the 2-byte length field itself.
-            app1_len = len(exif_body) + 2
-            if app1_len > 0xFFFF:
-                raise ValueError(f"add_exif_subifd_loop produced APP1 segment too large: {app1_len}")
-            app1_segment = b"\xFF\xE1" + struct.pack(">H", app1_len) + exif_body
-
-            # If current seed looks like JPEG, inject after SOI (or after first APPn segment when present).
-            if len(result) >= 2 and result[0] == 0xFF and result[1] == 0xD8:
-                insert_at = 2
-                if len(result) >= 6 and result[2] == 0xFF and 0xE0 <= result[3] <= 0xEF:
-                    seg_len = (result[4] << 8) | result[5]
-                    seg_end = 2 + 2 + seg_len
-                    if seg_len >= 2 and seg_end <= len(result):
-                        insert_at = seg_end
-                result = bytearray(bytes(result[:insert_at]) + app1_segment + bytes(result[insert_at:]))
+        elif op == "add_exif_subifd_chain":
+            # Build a SubIFD chain (optionally cyclic) to better emulate graph-like traversal stress.
+            subifd_count = int(mut.get("subifd_count", 8))
+            close_loop_raw = mut.get("close_loop", True)
+            if isinstance(close_loop_raw, str):
+                close_loop = close_loop_raw.strip().lower() in {"1", "true", "yes", "y"}
             else:
-                # Fallback: construct minimal JPEG envelope.
-                result = bytearray(b"\xFF\xD8" + app1_segment + b"\xFF\xD9")
+                close_loop = bool(close_loop_raw)
+            make = mut.get("make", "CAM")
+            app1_segment = _build_exif_subifd_chain_segment(
+                subifd_count=subifd_count,
+                close_loop=close_loop,
+                make=make,
+            )
+            result = bytearray(_inject_app1_segment(bytes(result), app1_segment))
         
         elif op == "add_pax_header":
             # Smart mutation: Uses tarfile to rebuild the archive with a new PAX header
