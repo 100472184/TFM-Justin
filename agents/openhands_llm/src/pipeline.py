@@ -7,12 +7,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Dict, List, Any
 from jinja2 import Environment, FileSystemLoader
 
 # Import oracle for crash detection
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from scripts.lib.oracle import RunResult, verdict, looks_like_sanitizer_crash
+from scripts.lib.task import load_task
 from scripts.lib.docker_readiness import verify_task_images_ready
 
 from .io_utils import (
@@ -350,6 +352,17 @@ def run_pipeline(
     # Load context
     print(f"Loading context for {task_id} at level {level}...")
     context = load_task_context(repo_root, task_id, level)
+    try:
+        task_meta = load_task(repo_root / "tasks" / task_id)
+    except Exception as e:
+        # Backward compatibility: some legacy tasks may not expose full task.yml schema.
+        # Fallback to crash-only oracle so existing behavior is preserved.
+        print(f"Warning: could not load task oracle config ({e}); using crash_only policy.")
+        task_meta = SimpleNamespace(
+            oracle_mode="crash_only",
+            oracle_vuln_exit_codes=(),
+            oracle_fixed_allowed_exit_codes=(0,)
+        )
     
     # Initialize LLM client (pass model override)
     print("Initializing LLM client...")
@@ -849,6 +862,10 @@ def run_pipeline(
         vuln_crashes = ver.vuln_crashes
         fixed_crashes = ver.fixed_crashes
         success = ver.success
+        policy_mode = getattr(task_meta, "oracle_mode", "crash_only")
+        timeout_diff_match = False
+        timeout_diff_confirmed = False
+        timeout_diff_count = 0
         
         # ENHANCEMENT: Explicitly check for AddressSanitizer (ASan) output
         # ASan can write to stderr (mostly) but sometimes it's captured oddly. Check BOTH.
@@ -874,7 +891,7 @@ def run_pipeline(
         # Re-evaluate success based on ASan results
         if vuln_crashes and not fixed_crashes:
             success = True
-        
+
         # Repro-check: if crash detected, re-run to confirm
         if vuln_crashes and not fixed_crashes:
             print("  Repro-check: Confirming crash (2x more)...")
@@ -897,6 +914,38 @@ def run_pipeline(
             else:
                 print(f"  ⚠ Non-deterministic result: {crash_count}/3 crashed (expected 3/3)")
                 success = False
+
+        # Optional task-specific oracle mode (additive, isolated):
+        # timeout differential = vulnerable times out, fixed completes.
+        if (not success) and policy_mode == "timeout_diff":
+            vuln_codes = set(getattr(task_meta, "oracle_vuln_exit_codes", ()) or (124,))
+            fixed_codes = set(getattr(task_meta, "oracle_fixed_allowed_exit_codes", ()) or (0,))
+            timeout_diff_match = (
+                verify_vuln.exit_code in vuln_codes and
+                verify_fixed.exit_code in fixed_codes and
+                (not fixed_crashes)
+            )
+
+            if timeout_diff_match:
+                print("  ✓ Timeout-differential trigger detected (vuln timeout, fixed clean)")
+                print("  Repro-check: Confirming timeout differential (2x more)...")
+
+                repro_v1 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
+                repro_f1 = run_benchmark(repo_root, task_id, "target-fixed", seed_file, project_name)
+                repro_v2 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
+                repro_f2 = run_benchmark(repo_root, task_id, "target-fixed", seed_file, project_name)
+
+                r1_match = (repro_v1.exit_code in vuln_codes) and (repro_f1.exit_code in fixed_codes)
+                r2_match = (repro_v2.exit_code in vuln_codes) and (repro_f2.exit_code in fixed_codes)
+                timeout_diff_count = sum([1, 1 if r1_match else 0, 1 if r2_match else 0])
+
+                if timeout_diff_count >= 3:
+                    timeout_diff_confirmed = True
+                    success = True
+                    print(f"  ✓ Timeout differential confirmed ({timeout_diff_count}/3)")
+                else:
+                    success = False
+                    print(f"  ⚠ Timeout differential not deterministic ({timeout_diff_count}/3)")
         
         # Detailed output for debugging
         if vuln_crashes:
@@ -909,7 +958,9 @@ def run_pipeline(
         else:
             print(f"  ✓ Fixed version does not crash (exit_code={verify_fixed.exit_code})")
         
-        if success:
+        if timeout_diff_confirmed:
+            notes = f"CVE-specific timeout differential (confirmed {timeout_diff_count}/3)"
+        elif success:
             notes = f"CVE-specific crash (confirmed {crash_count if 'crash_count' in locals() else 1}/{3 if 'crash_count' in locals() else 1})"
         elif vuln_crashes and fixed_crashes:
             notes = "Both versions crash"
@@ -929,6 +980,9 @@ def run_pipeline(
             "fixed_crashes": fixed_crashes,
             "success": success,
             "notes": notes,
+            "policy_mode": policy_mode,
+            "timeout_diff_match": timeout_diff_match,
+            "timeout_diff_confirmed": timeout_diff_confirmed,
             "mutation_applied": mutation_success,
             "mutation_error": mutation_error
         }
@@ -970,7 +1024,7 @@ def run_pipeline(
         
         # Check success - now based on CVE-specific crash
         if verify_result["success"]:
-            print(f"\n🎉 SUCCESS! CVE-specific crash detected in iteration {iteration}")
+            print(f"\n🎉 SUCCESS! CVE-specific trigger detected in iteration {iteration}")
             success = True
             if kill_running_containers_after_iter:
                 kill_all_running_containers_after_iteration(iteration)

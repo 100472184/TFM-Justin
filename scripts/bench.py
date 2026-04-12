@@ -92,6 +92,22 @@ def _run_service(tdir: Path, service: str, seed: Path) -> RunResult:
     
     return RunResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
+
+def _policy_success(meta, v: RunResult, f: RunResult, base_success: bool) -> tuple[bool, str]:
+    """
+    Task-specific success policy.
+    Default (all existing tasks): crash-only oracle.
+    Optional (CVE-2022-24724 style): timeout differential oracle.
+    """
+    if meta.oracle_mode != "timeout_diff":
+        return base_success, "crash_only"
+
+    vuln_codes = set(meta.oracle_vuln_exit_codes or (124,))
+    fixed_codes = set(meta.oracle_fixed_allowed_exit_codes or (0,))
+    timeout_diff = (v.exit_code in vuln_codes) and (f.exit_code in fixed_codes)
+
+    return (base_success or timeout_diff), "timeout_diff"
+
 def cmd_run(args: argparse.Namespace) -> None:
     tdir = tasks_root() / args.task_id
     seed = Path(args.seed)
@@ -104,13 +120,19 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 def cmd_evaluate(args: argparse.Namespace) -> None:
     tdir = tasks_root() / args.task_id
+    meta = load_task(tdir)
     seed = Path(args.seed)
     if not seed.exists():
         die(f"Seed not found: {seed}")
     v = _run_service(tdir, "target-vuln", seed)
     f = _run_service(tdir, "target-fixed", seed)
     ver = verdict(v, f)
-    print(f"[bold]{args.task_id}[/bold] verdict: vuln_crashes={ver.vuln_crashes} fixed_crashes={ver.fixed_crashes} success={ver.success}")
+    success, policy = _policy_success(meta, v, f, ver.success)
+    print(
+        f"[bold]{args.task_id}[/bold] verdict: "
+        f"vuln_crashes={ver.vuln_crashes} fixed_crashes={ver.fixed_crashes} "
+        f"success={success} policy={policy} vuln_exit={v.exit_code} fixed_exit={f.exit_code}"
+    )
 
 def cmd_evaluate_all(args: argparse.Namespace) -> None:
     seeds_root = Path(args.seeds_root)
@@ -129,11 +151,16 @@ def cmd_evaluate_all(args: argparse.Namespace) -> None:
         v = _run_service(tdir, "target-vuln", seed)
         f = _run_service(tdir, "target-fixed", seed)
         ver = verdict(v, f)
-        if ver.success:
+        success, policy = _policy_success(meta, v, f, ver.success)
+        if success:
             ok += 1
-            print(f"[green]OK[/green] {meta.task_id}")
+            print(f"[green]OK[/green] {meta.task_id} (policy={policy})")
         else:
-            print(f"[red]FAIL[/red] {meta.task_id} (vuln_crashes={ver.vuln_crashes}, fixed_crashes={ver.fixed_crashes})")
+            print(
+                f"[red]FAIL[/red] {meta.task_id} "
+                f"(policy={policy}, vuln_crashes={ver.vuln_crashes}, fixed_crashes={ver.fixed_crashes}, "
+                f"vuln_exit={v.exit_code}, fixed_exit={f.exit_code})"
+            )
     print(f"\nSummary: {ok}/{total} successes (only tasks with seeds)")
 
 def main() -> None:
