@@ -13,7 +13,7 @@ from jinja2 import Environment, FileSystemLoader
 
 # Import oracle for crash detection
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from scripts.lib.oracle import RunResult, verdict, looks_like_sanitizer_crash
+from scripts.lib.oracle import RunResult, verdict, looks_like_sanitizer_crash, CRASH_EXIT_CODES
 from scripts.lib.task import load_task
 from scripts.lib.docker_readiness import verify_task_images_ready
 
@@ -892,8 +892,11 @@ def run_pipeline(
         if vuln_crashes and not fixed_crashes:
             success = True
 
-        # Repro-check: if crash detected, re-run to confirm
-        if vuln_crashes and not fixed_crashes:
+        # Repro-check: if crash detected, re-run to confirm.
+        # For timeout-diff tasks, avoid classifying plain timeout(124) as "crash confirmed".
+        crash_like_exit = verify_vuln.exit_code in CRASH_EXIT_CODES
+        strong_crash_signal = vuln_asan or crash_like_exit
+        if vuln_crashes and not fixed_crashes and (policy_mode != "timeout_diff" or strong_crash_signal):
             print("  Repro-check: Confirming crash (2x more)...")
             
             repro1 = run_benchmark(repo_root, task_id, service, seed_file, project_name)

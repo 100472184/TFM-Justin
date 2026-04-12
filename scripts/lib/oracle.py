@@ -3,8 +3,16 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-# Sanitizer keywords
-ASAN_RE = re.compile(r"AddressSanitizer|UndefinedBehaviorSanitizer|ASAN:|UBSAN:", re.IGNORECASE)
+# Sanitizer keywords (strong crash-like signals only).
+# Avoid matching benign strings like "WARNING: AddressSanitizer failed to allocate ...".
+ASAN_RE = re.compile(
+    r"ERROR:\s*AddressSanitizer|"
+    r"AddressSanitizer:|"
+    r"SUMMARY:\s*AddressSanitizer|"
+    r"UndefinedBehaviorSanitizer:|"
+    r"runtime error:",
+    re.IGNORECASE
+)
 
 # Generic crash keywords
 CRASH_RE = re.compile(
