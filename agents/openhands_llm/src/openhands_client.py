@@ -5,6 +5,120 @@ import json
 from typing import Dict, Optional
 
 
+def _strip_json_comments_safe(text: str) -> str:
+    """Remove // and /* */ comments only when outside JSON strings."""
+    out = []
+    in_string = False
+    escaped = False
+    in_line_comment = False
+    in_block_comment = False
+    i = 0
+    n = len(text)
+
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+
+        if in_line_comment:
+            if ch in ("\n", "\r"):
+                in_line_comment = False
+                out.append(ch)
+            i += 1
+            continue
+
+        if in_block_comment:
+            if ch == "*" and nxt == "/":
+                in_block_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        # Outside strings
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch == "/" and nxt == "/":
+            in_line_comment = True
+            i += 2
+            continue
+
+        if ch == "/" and nxt == "*":
+            in_block_comment = True
+            i += 2
+            continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out)
+
+
+def _escape_unescaped_control_chars_in_strings(text: str) -> str:
+    """
+    Escape raw control characters inside JSON strings.
+    This repairs common LLM output issues like unescaped newlines/tabs in string values.
+    """
+    out = []
+    in_string = False
+    escaped = False
+
+    for ch in text:
+        if in_string:
+            if escaped:
+                out.append(ch)
+                escaped = False
+                continue
+
+            if ch == "\\":
+                out.append(ch)
+                escaped = True
+                continue
+
+            if ch == '"':
+                out.append(ch)
+                in_string = False
+                continue
+
+            # Escape illegal raw control chars inside JSON string values
+            if ch == "\n":
+                out.append("\\n")
+                continue
+            if ch == "\r":
+                out.append("\\r")
+                continue
+            if ch == "\t":
+                out.append("\\t")
+                continue
+            if ord(ch) < 0x20:
+                out.append(f"\\u{ord(ch):04x}")
+                continue
+
+            out.append(ch)
+            continue
+
+        out.append(ch)
+        if ch == '"':
+            in_string = True
+            escaped = False
+
+    return "".join(out)
+
+
 class OpenHandsLLMClient:
     """Wrapper around OpenHands SDK LLM for JSON completions."""
     
@@ -141,6 +255,7 @@ class OpenHandsLLMClient:
                 
                 # Try to parse JSON with aggressive cleaning
                 content = content.strip()
+                content = content.replace("\ufeff", "").replace("\x00", "")
 
                 # Prefer extracting JSON inside triple-backtick fences first
                 try:
@@ -167,14 +282,11 @@ class OpenHandsLLMClient:
                         content = content[:-3]
                     content = content.strip()
                 
-                # Remove comments (// and /* */ style)
-                import re
-                # Remove single-line comments
-                content = re.sub(r'//.*?$', '', content, flags=re.MULTILINE)
-                # Remove multi-line comments
-                content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+                # Remove comments safely (outside strings only)
+                content = _strip_json_comments_safe(content)
                 
                 # Try to extract JSON if embedded in text
+                import re
                 if not content.startswith('{') and not content.startswith('['):
                     # Try to find JSON object
                     match = re.search(r'(\{.*\}|\[.*\])', content, re.DOTALL)
@@ -184,6 +296,9 @@ class OpenHandsLLMClient:
                 # Remove trailing commas before closing braces/brackets
                 content = re.sub(r',(\s*[}\]])', r'\1', content)
                 
+                # Repair invalid raw control chars inside string values
+                content = _escape_unescaped_control_chars_in_strings(content)
+
                 content = content.strip()
                 
                 # Pre-process: Handle common LLM "math in string" hallucination

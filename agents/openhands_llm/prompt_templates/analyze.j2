@@ -69,6 +69,12 @@ Analyze the vulnerability and current state. Provide strategic guidance for seed
   "stop_early": false
 }
 
+Hard JSON constraints:
+- Use single-line string values only (no literal newlines or tabs inside strings).
+- Keep `summary` under 500 characters.
+- Keep each item in `hypotheses` under 220 characters.
+- Return exactly one JSON object and nothing else.
+
 Set "stop_early" to true only if:
 - The vulnerability cannot be triggered with seed mutations alone
 - Maximum reasonable attempts have been made

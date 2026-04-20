@@ -229,6 +229,11 @@ Propose 1-5 mutations to apply to the current seed. Consider:
   "rationale": "Why these mutations might trigger the vulnerability"
 }
 
+Hard JSON constraints:
+- Use single-line string values only (no literal newlines or tabs inside strings).
+- Keep `rationale` under 500 characters.
+- Return exactly one JSON object and nothing else.
+
 If no mutations seem promising, return empty array: {"mutations": [], "rationale": "..."}
 
 Respond with JSON only:
