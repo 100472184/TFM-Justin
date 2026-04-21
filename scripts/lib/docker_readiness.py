@@ -126,10 +126,10 @@ def verify_task_images_ready(
         ...     print(f"Fixed: {versions['fixed']}")
     """
     # Construct image names based on compose.yml convention
-    # Images are published under the `cvebench` namespace with tags `:vuln` and `:fixed`
-    # Example: cvebench/cve-2024-57970_libarchive:vuln
-    vuln_image = f"cvebench/{task_id.lower()}:vuln"
-    fixed_image = f"cvebench/{task_id.lower()}:fixed"
+    # Images are published under the `tfm-justin` namespace with tags `:vuln` and `:fixed`
+    # Example: tfm-justin/cve-2024-57970_libarchive:vuln
+    vuln_image = f"tfm-justin/{task_id.lower()}:vuln"
+    fixed_image = f"tfm-justin/{task_id.lower()}:fixed"
     
     # Determine entrypoint from task.yml or use default
     # Look for tasks/<task_id>/task.yml and read target.binary
