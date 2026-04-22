@@ -35,6 +35,20 @@ LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
 RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
 STATE_FILE = ".run_pending_models_state.json"
 
+# Baseline hardcodeada a partir del estado analizado previamente.
+# Se usa para no depender de tener runs sincronizado en Kali.
+HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
+    ("CVE-2014-2525_libyaml", "llama3-8b", "L1"),
+    ("CVE-2014-2525_libyaml", "llama3-8b", "L2"),
+    ("CVE-2014-2525_libyaml", "llama3-8b", "L3"),
+    ("CVE-2014-2525_libyaml", "mistral-7b", "L1"),
+    ("CVE-2014-2525_libyaml", "mistral-7b", "L2"),
+    ("CVE-2014-2525_libyaml", "mistral-7b", "L3"),
+    ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L1"),
+    ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L2"),
+    ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L3"),
+}
+
 
 @dataclass(frozen=True)
 class Combo:
@@ -373,6 +387,10 @@ def combo_key(combo: Combo) -> str:
     return f"{combo.cve}|{combo.model_alias}|{combo.level}"
 
 
+def combo_in_hardcoded_baseline(combo: Combo) -> bool:
+    return (combo.cve, combo.model_alias, combo.level) in HARDCODED_EXISTING_COMBOS
+
+
 def save_state(state_path: Path, data: dict[str, Any]) -> None:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = state_path.with_suffix(state_path.suffix + ".tmp")
@@ -470,7 +488,10 @@ def main() -> int:
         if done:
             existing.append((combo, reason))
         else:
-            pending.append(combo)
+            if combo_in_hardcoded_baseline(combo):
+                existing.append((combo, "exists-hardcoded-baseline"))
+            else:
+                pending.append(combo)
 
     log(f"Modo: {'DRY-RUN' if dry_run else 'EJECUCION REAL'}")
     log(f"Total combinaciones inspeccionadas: {len(combos)}")
@@ -549,7 +570,15 @@ def main() -> int:
         ]
         update_combo_state(state, combo, "running", "launched")
         save_state(state_path, state)
-        run_res = run_cmd(cmd, cwd=repo_root, dry_run=False, capture_output=True, timeout_sec=args.run_timeout_sec)
+        try:
+            run_res = run_cmd(cmd, cwd=repo_root, dry_run=False, capture_output=True, timeout_sec=args.run_timeout_sec)
+        except KeyboardInterrupt:
+            msg = "keyboard-interrupt-during-run"
+            failed.append((combo, msg))
+            update_combo_state(state, combo, "failed", msg)
+            save_state(state_path, state)
+            log("Interrupcion manual detectada (Ctrl+C). Abortando batch de forma segura.")
+            break
         output = run_res.output
         if run_res.timed_out:
             msg = f"pipeline-timeout:{args.run_timeout_sec}s"
@@ -694,6 +723,14 @@ def main() -> int:
         state["final_status"] = "dry-run-complete"
         save_state(state_path, state)
         return 0
+
+    # Ctrl+C outside subprocess or interrupcion general
+    if failed and any(reason == "keyboard-interrupt-during-run" for _, reason in failed):
+        print("\nEjecucion interrumpida por usuario. NO se hara commit/push.")
+        state["finished_at"] = dt.datetime.now().isoformat(timespec="seconds")
+        state["final_status"] = "interrupted-by-user"
+        save_state(state_path, state)
+        return 130
 
     # No commit/push on severe errors
     if failed:
