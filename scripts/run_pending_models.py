@@ -41,9 +41,11 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "llama3-8b", "L1"),
     ("CVE-2014-2525_libyaml", "llama3-8b", "L2"),
     ("CVE-2014-2525_libyaml", "llama3-8b", "L3"),
+    ("CVE-2014-2525_libyaml", "llama3-8b", "L0"),
     ("CVE-2014-2525_libyaml", "mistral-7b", "L1"),
     ("CVE-2014-2525_libyaml", "mistral-7b", "L2"),
     ("CVE-2014-2525_libyaml", "mistral-7b", "L3"),
+    ("CVE-2014-2525_libyaml", "mistral-7b", "L0"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L1"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L2"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L3"),
@@ -432,10 +434,11 @@ def build_combos(
     models = [m for m in sorted(MODEL_SPECS.keys()) if not models_filter or m in models_filter]
     levels = [l for l in LEVEL_ORDER if not levels_filter or l in levels_filter]
 
+    # Global priority order: all L3 first, then all L2, then L1, then L0.
     combos: list[Combo] = []
-    for cve in selected_cves:
-        for model_alias in models:
-            for level in levels:
+    for level in levels:
+        for cve in selected_cves:
+            for model_alias in models:
                 combos.append(
                     Combo(
                         cve=cve,
