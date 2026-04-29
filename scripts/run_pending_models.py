@@ -628,7 +628,8 @@ def main() -> int:
         source_existed_before = dest.name in before_dirs
 
         cmd = [
-            "python",
+            sys.executable,
+            "-u",
             "-m",
             "agents.openhands_llm.run",
             "--task-id",
