@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import re
 import shutil
+import threading
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -49,6 +50,9 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L1"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L2"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L3"),
+    ("CVE-2016-5314_libtiff", "llama3-8b", "L3"),
+    ("CVE-2016-5314_libtiff", "mistral-7b", "L3"),
+    ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L3"),
 }
 
 
@@ -87,19 +91,68 @@ def run_cmd(
 
     try:
         if capture_output:
-            proc = subprocess.run(
+            # Stream stdout/stderr in real-time while also capturing them.
+            proc = subprocess.Popen(
                 args,
                 cwd=str(cwd),
                 text=True,
-                capture_output=True,
-                check=False,
-                timeout=timeout_sec,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
             )
-            if proc.stdout:
-                print(proc.stdout, end="")
-            if proc.stderr:
-                print(proc.stderr, end="", file=sys.stderr)
-            return CmdResult(returncode=proc.returncode, output=f"{proc.stdout}\n{proc.stderr}", timed_out=False)
+            stdout_chunks: list[str] = []
+            stderr_chunks: list[str] = []
+
+            def _pump(pipe, sink: list[str], to_stderr: bool = False) -> None:
+                if pipe is None:
+                    return
+                try:
+                    for line in iter(pipe.readline, ""):
+                        sink.append(line)
+                        if to_stderr:
+                            print(line, end="", file=sys.stderr, flush=True)
+                        else:
+                            print(line, end="", flush=True)
+                finally:
+                    try:
+                        pipe.close()
+                    except Exception:
+                        pass
+
+            t_out = threading.Thread(target=_pump, args=(proc.stdout, stdout_chunks, False), daemon=True)
+            t_err = threading.Thread(target=_pump, args=(proc.stderr, stderr_chunks, True), daemon=True)
+            t_out.start()
+            t_err.start()
+
+            try:
+                proc.wait(timeout=timeout_sec)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                t_out.join(timeout=2)
+                t_err.join(timeout=2)
+                return CmdResult(returncode=124, output=f"{''.join(stdout_chunks)}\n{''.join(stderr_chunks)}", timed_out=True)
+            except KeyboardInterrupt:
+                # On Ctrl+C, terminate child and re-raise to caller.
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    proc.kill()
+                t_out.join(timeout=2)
+                t_err.join(timeout=2)
+                raise
+
+            t_out.join(timeout=2)
+            t_err.join(timeout=2)
+            return CmdResult(
+                returncode=proc.returncode if proc.returncode is not None else 1,
+                output=f"{''.join(stdout_chunks)}\n{''.join(stderr_chunks)}",
+                timed_out=False,
+            )
 
         proc = subprocess.run(args, cwd=str(cwd), text=True, check=False, timeout=timeout_sec)
         return CmdResult(returncode=proc.returncode, output="", timed_out=False)
@@ -393,6 +446,23 @@ def combo_in_hardcoded_baseline(combo: Combo) -> bool:
     return (combo.cve, combo.model_alias, combo.level) in HARDCODED_EXISTING_COMBOS
 
 
+def classify_pipeline_failure(output: str) -> str | None:
+    """
+    Classify known pipeline failures from stdout/stderr text.
+    Returns a short failure code or None if not recognized.
+    """
+    text = (output or "").lower()
+    if "failed to solve" in text or "did not complete successfully: exit code" in text:
+        return "pipeline-build-failed"
+    if "error: build failed" in text or "docker compose build" in text and "failed" in text:
+        return "pipeline-build-failed"
+    if "images not ready" in text:
+        return "pipeline-images-not-ready"
+    if "seed file not found" in text:
+        return "pipeline-seed-not-found"
+    return None
+
+
 def save_state(state_path: Path, data: dict[str, Any]) -> None:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = state_path.with_suffix(state_path.suffix + ".tmp")
@@ -610,7 +680,11 @@ def main() -> int:
 
         run_dir, src_reason = resolve_new_run_dir(repo_root, combo, model_dir, before_dirs, output)
         if not run_dir:
-            msg = f"cannot-resolve-run-dir:{src_reason}"
+            classified = classify_pipeline_failure(output)
+            if classified:
+                msg = classified
+            else:
+                msg = f"cannot-resolve-run-dir:{src_reason}"
             failed.append((combo, msg))
             update_combo_state(state, combo, "failed", msg)
             save_state(state_path, state)
