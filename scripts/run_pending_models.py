@@ -35,6 +35,7 @@ MODEL_SPECS = {
 LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
 RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
 STATE_FILE = ".run_pending_models_state.json"
+DEFAULT_MAX_STAGE_FILE_MB = 95
 
 # Baseline hardcodeada a partir del estado analizado previamente.
 # Se usa para no depender de tener runs sincronizado en Kali.
@@ -53,6 +54,13 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-5314_libtiff", "llama3-8b", "L3"),
     ("CVE-2016-5314_libtiff", "mistral-7b", "L3"),
     ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L3"),
+    ("CVE-2016-9827_libming", "llama3-8b", "L3"),
+    ("CVE-2016-9827_libming", "mistral-7b", "L3"),
+    ("CVE-2016-9827_libming", "qwen2.5-7b", "L3"),
+    ("CVE-2021-32292_jsonc", "qwen2.5-7b", "L3"),
+    ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L3"),
+    ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L3"),
+    ("CVE-2022-4899_zstd", "llama3-8b", "L3"),
 }
 
 
@@ -231,6 +239,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Aborta el batch completo al primer timeout.",
     )
+    p.add_argument(
+        "--max-stage-file-mb",
+        type=int,
+        default=DEFAULT_MAX_STAGE_FILE_MB,
+        help=f"Tamanio maximo por archivo para git add en runs/ (default: {DEFAULT_MAX_STAGE_FILE_MB} MB).",
+    )
     return p.parse_args()
 
 
@@ -240,6 +254,68 @@ def safe_relative_to(child: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _chunks(items: list[str], n: int) -> list[list[str]]:
+    return [items[i : i + n] for i in range(0, len(items), n)]
+
+
+def stage_run_files_safely(
+    repo_root: Path,
+    run_path: Path,
+    max_stage_file_mb: int,
+    dry_run: bool,
+) -> tuple[bool, str, list[str]]:
+    if not run_path.exists():
+        return False, "run-path-missing", []
+    if not safe_relative_to(run_path, repo_root):
+        return False, "unsafe-run-path", []
+
+    max_bytes = max_stage_file_mb * 1024 * 1024
+    files: list[Path] = []
+    if run_path.is_file():
+        files = [run_path]
+    else:
+        files = [p for p in run_path.rglob("*") if p.is_file()]
+
+    if not files:
+        return False, "run-path-has-no-files", []
+
+    stageable: list[str] = []
+    skipped_large: list[str] = []
+    for f in files:
+        try:
+            size = f.stat().st_size
+        except OSError:
+            continue
+        rel = f.relative_to(repo_root).as_posix()
+        if size > max_bytes:
+            skipped_large.append(rel)
+        else:
+            stageable.append(rel)
+
+    if not stageable:
+        return False, f"all-files-exceed-limit:{max_stage_file_mb}MB", []
+
+    if skipped_large:
+        log(
+            f"WARNING se omiten {len(skipped_large)} archivo(s) > {max_stage_file_mb}MB para evitar rechazo en push."
+        )
+        for p in skipped_large[:6]:
+            log(f"  omitiendo: {p}")
+        if len(skipped_large) > 6:
+            log(f"  ... y {len(skipped_large) - 6} mas")
+
+    if dry_run:
+        for chunk in _chunks(stageable, 120):
+            log(f"DRY-RUN git add: git add -f -- {' '.join(chunk)}")
+        return True, "staged-dry-run", stageable
+
+    for chunk in _chunks(stageable, 120):
+        add_res = run_cmd(["git", "add", "-f", "--", *chunk], cwd=repo_root, dry_run=False, capture_output=True)
+        if add_res.returncode != 0:
+            return False, "git-add-failed", []
+    return True, "staged", stageable
 
 
 def list_cves(runs_root: Path) -> list[str]:
@@ -460,6 +536,10 @@ def classify_pipeline_failure(output: str) -> str | None:
         return "pipeline-images-not-ready"
     if "seed file not found" in text:
         return "pipeline-seed-not-found"
+    if "oci runtime create failed" in text or "failed to create shim task" in text:
+        return "pipeline-container-start-failed"
+    if "permission denied: unknown" in text:
+        return "pipeline-container-permission-denied"
     return None
 
 
@@ -702,15 +782,20 @@ def main() -> int:
 
         if run_dir.resolve() == dest.resolve() and not source_existed_before:
             rel = dest.relative_to(repo_root).as_posix()
-            add_res = run_cmd(["git", "add", "-f", "--", rel], cwd=repo_root, dry_run=False, capture_output=True)
-            if add_res.returncode != 0:
-                msg = f"git-add-failed:{rel}"
+            ok_stage, stage_reason, staged_rel_files = stage_run_files_safely(
+                repo_root=repo_root,
+                run_path=dest,
+                max_stage_file_mb=args.max_stage_file_mb,
+                dry_run=False,
+            )
+            if not ok_stage:
+                msg = f"git-add-failed:{rel}:{stage_reason}"
                 failed.append((combo, msg))
                 update_combo_state(state, combo, "failed", msg)
                 save_state(state_path, state)
                 log(f"ERROR git add fallo: {rel}")
                 continue
-            staged_paths.append(rel)
+            staged_paths.extend(staged_rel_files)
             executed_ok.append(combo)
             update_combo_state(state, combo, "staged", f"source-already-canonical:{rel}")
             save_state(state_path, state)
@@ -736,8 +821,13 @@ def main() -> int:
             continue
 
         rel = dest.relative_to(repo_root).as_posix()
-        add_res = run_cmd(["git", "add", "-f", "--", rel], cwd=repo_root, dry_run=False, capture_output=True)
-        if add_res.returncode != 0:
+        ok_stage, stage_reason, staged_rel_files = stage_run_files_safely(
+            repo_root=repo_root,
+            run_path=dest,
+            max_stage_file_mb=args.max_stage_file_mb,
+            dry_run=False,
+        )
+        if not ok_stage:
             rollback_detail = "rollback-not-attempted"
             # Rollback best-effort to avoid partial state after move+add failure
             if safe_relative_to(dest, model_dir) and safe_relative_to(run_dir, model_dir) and dest.exists() and not run_dir.exists():
@@ -746,14 +836,14 @@ def main() -> int:
                     rollback_detail = "rollback-ok"
                 except Exception as rb_e:
                     rollback_detail = f"rollback-failed:{rb_e}"
-            msg = f"git-add-failed:{rel}:{rollback_detail}"
+            msg = f"git-add-failed:{rel}:{stage_reason}:{rollback_detail}"
             failed.append((combo, msg))
             update_combo_state(state, combo, "failed", msg)
             save_state(state_path, state)
             log(f"ERROR git add fallo: {rel}")
             continue
 
-        staged_paths.append(rel)
+        staged_paths.extend(staged_rel_files)
         executed_ok.append(combo)
         update_combo_state(state, combo, "staged", rel)
         save_state(state_path, state)
