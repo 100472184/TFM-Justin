@@ -881,8 +881,15 @@ def main() -> int:
     print(f"Fallidas: {len(failed)}")
     print(f"Staged paths: {len(staged_paths)}")
 
+    if executed_ok:
+        print(f"\nCompletadas y staged ({len(executed_ok)}):")
+        for combo in executed_ok:
+            dest = canonical_dest(runs_root, combo.cve, combo.model_alias, combo.level)
+            rel = dest.relative_to(repo_root).as_posix() if safe_relative_to(dest, repo_root) else str(dest)
+            print(f"  ✔ {combo.cve} {combo.model_alias} {combo.level} -> {rel}")
+
     if existing:
-        print("\nYa existentes (muestra):")
+        print(f"\nYa existentes (muestra):")
         for combo, reason in existing[:12]:
             print(f"- {combo.cve} {combo.model_alias} {combo.level} [{reason}]")
         if len(existing) > 12:
@@ -913,7 +920,13 @@ def main() -> int:
 
     # Ctrl+C outside subprocess or interrupcion general
     if failed and any(reason == "keyboard-interrupt-during-run" for _, reason in failed):
-        print("\nEjecucion interrumpida por usuario. NO se hara commit/push.")
+        print("\nEjecucion interrumpida por usuario. NO se hara commit/push automatico.")
+        if executed_ok:
+            print(f"\n  ℹ {len(executed_ok)} run(s) completada(s) y staged antes de la interrupcion.")
+            print("  Puedes hacer commit manual con:")
+            print(f'    git commit -m "{args.commit_message}"')
+        else:
+            print("\n  No habia runs completadas antes de la interrupcion.")
         state["finished_at"] = dt.datetime.now().isoformat(timespec="seconds")
         state["final_status"] = "interrupted-by-user"
         save_state(state_path, state)
