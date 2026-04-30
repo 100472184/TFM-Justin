@@ -319,11 +319,30 @@ def stage_run_files_safely(
 
 
 def list_cves(runs_root: Path) -> list[str]:
-    out: list[str] = []
-    for p in sorted(runs_root.iterdir()):
-        if p.is_dir() and p.name.startswith("CVE-"):
-            out.append(p.name)
-    return out
+    """Discover CVEs from both runs/ and tasks/ directories.
+
+    On Kali the runs/ tree may not have all CVE dirs yet, so we also
+    scan tasks/ to pick up every CVE that has a valid task.yml
+    (excluding *_DISCARDED folders).
+    """
+    cves: set[str] = set()
+    tasks_root = runs_root.parent / "tasks"
+    # From runs/  (only if the CVE also has a valid task.yml)
+    if runs_root.is_dir():
+        for p in runs_root.iterdir():
+            if p.is_dir() and p.name.startswith("CVE-"):
+                if tasks_root.is_dir() and (tasks_root / p.name / "task.yml").is_file():
+                    cves.add(p.name)
+    if tasks_root.is_dir():
+        for p in tasks_root.iterdir():
+            if (
+                p.is_dir()
+                and p.name.startswith("CVE-")
+                and "DISCARDED" not in p.name
+                and (p / "task.yml").is_file()
+            ):
+                cves.add(p.name)
+    return sorted(cves)
 
 
 def read_summary_from_run_dir(run_dir: Path, cve: str) -> dict | None:
