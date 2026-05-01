@@ -565,6 +565,36 @@ def classify_pipeline_failure(output: str) -> str | None:
     return None
 
 
+def detect_run_anomalies(output: str) -> list[str]:
+    """
+    Detect suspicious runtime behaviors that should be manually reviewed,
+    even when the run produced/staged artifacts.
+    """
+    text = (output or "").lower()
+    anomalies: list[str] = []
+
+    def add(code: str) -> None:
+        if code not in anomalies:
+            anomalies.append(code)
+
+    # Seed/harness semantic mismatches
+    if "seed contains nul byte" in text or "use text argument seeds for this task" in text:
+        add("seed-nul-rejected")
+    if "seed not found at" in text:
+        add("harness-seed-not-found")
+    if "target binary not found or not executable" in text:
+        add("harness-target-not-executable")
+
+    # Container runtime errors that can still leave partial artifacts
+    if "oci runtime create failed" in text or "failed to create shim task" in text:
+        add("container-runtime-create-failed")
+    if "permission denied: unknown" in text:
+        add("container-permission-denied")
+
+    # Keep this focused: transient LLM parse/mutation retries are intentionally ignored.
+    return anomalies
+
+
 def save_state(state_path: Path, data: dict[str, Any]) -> None:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = state_path.with_suffix(state_path.suffix + ".tmp")
@@ -693,6 +723,7 @@ def main() -> int:
     executed_ok: list[Combo] = []
     failed: list[tuple[Combo, str]] = []
     skipped: list[tuple[Combo, str]] = []
+    anomalous: list[tuple[Combo, list[str], str]] = []
 
     for combo in pending:
         model_dir = runs_root / combo.cve / combo.model_alias
@@ -756,6 +787,7 @@ def main() -> int:
             log("Interrupcion manual detectada (Ctrl+C). Abortando batch de forma segura.")
             break
         output = run_res.output
+        run_anomalies = detect_run_anomalies(output)
         if run_res.timed_out:
             msg = f"pipeline-timeout:{args.run_timeout_sec}s"
             failed.append((combo, msg))
@@ -819,7 +851,12 @@ def main() -> int:
                 continue
             staged_paths.extend(staged_rel_files)
             executed_ok.append(combo)
-            update_combo_state(state, combo, "staged", f"source-already-canonical:{rel}")
+            if run_anomalies:
+                anomalous.append((combo, run_anomalies, rel))
+                update_combo_state(state, combo, "staged-anomalous", f"{rel}|{','.join(run_anomalies)}")
+                log(f"WARNING run staged con comportamiento anomalo: {combo.cve} {combo.model_alias} {combo.level} -> {run_anomalies}")
+            else:
+                update_combo_state(state, combo, "staged", f"source-already-canonical:{rel}")
             save_state(state_path, state)
             log(f"OK source-already-canonical + git add -f {rel}")
             continue
@@ -867,7 +904,12 @@ def main() -> int:
 
         staged_paths.extend(staged_rel_files)
         executed_ok.append(combo)
-        update_combo_state(state, combo, "staged", rel)
+        if run_anomalies:
+            anomalous.append((combo, run_anomalies, rel))
+            update_combo_state(state, combo, "staged-anomalous", f"{rel}|{','.join(run_anomalies)}")
+            log(f"WARNING run staged con comportamiento anomalo: {combo.cve} {combo.model_alias} {combo.level} -> {run_anomalies}")
+        else:
+            update_combo_state(state, combo, "staged", rel)
         save_state(state_path, state)
         log(f"OK git add -f {rel}")
 
@@ -880,6 +922,7 @@ def main() -> int:
     print(f"Ya existentes: {len(existing)}")
     print(f"Pendientes: {len(pending)}")
     print(f"Ejecutadas OK: {len(executed_ok)}")
+    print(f"Anomalas (staged): {len(anomalous)}")
     print(f"Omitidas: {len(skipped)}")
     print(f"Fallidas: {len(failed)}")
     print(f"Staged paths: {len(staged_paths)}")
@@ -902,6 +945,11 @@ def main() -> int:
         print("\nOmitidas:")
         for combo, reason in skipped:
             print(f"- {combo.cve} {combo.model_alias} {combo.level} [{reason}]")
+
+    if anomalous:
+        print("\nAnomalas (revisar antes de commit):")
+        for combo, codes, rel in anomalous:
+            print(f"- {combo.cve} {combo.model_alias} {combo.level} [{','.join(codes)}] -> {rel}")
 
     if failed:
         print("\nFallidas:")
@@ -926,6 +974,8 @@ def main() -> int:
         print("\nEjecucion interrumpida por usuario. NO se hara commit/push automatico.")
         if executed_ok:
             print(f"\n  ℹ {len(executed_ok)} run(s) completada(s) y staged antes de la interrupcion.")
+            if anomalous:
+                print(f"  WARNING: {len(anomalous)} run(s) staged con comportamiento anomalo: revisar/limpiar antes de commit.")
             print("  Puedes hacer commit manual con:")
             print(f'    git commit -m "{args.commit_message}"')
         else:
@@ -942,6 +992,16 @@ def main() -> int:
         state["final_status"] = "failed-no-commit"
         save_state(state_path, state)
         return 1
+
+    # If anomalous runs were staged, force manual review before commit/push.
+    if anomalous:
+        print("\nSe detectaron runs anomalas ya staged. Se omite commit/push automatico para revision manual.")
+        print("Revisa estas rutas y, si procede, retira del stage antes de commitear:")
+        print("  git restore --staged <ruta>")
+        state["finished_at"] = dt.datetime.now().isoformat(timespec="seconds")
+        state["final_status"] = "anomalous-no-auto-commit"
+        save_state(state_path, state)
+        return 3
 
     # Commit and push once at the end
     rc_diff = subprocess.run(
