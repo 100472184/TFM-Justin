@@ -376,12 +376,21 @@ def run_pipeline(
         # No seed provided, try to find a base seed file
         task_seeds_dir = repo_root / "tasks" / task_id / "seeds"
         
-        # Check for various seed file formats
+        # Prefer semantic/text seeds first when available.
+        # Some tasks (e.g. CVE-2022-4899_zstd) treat seed bytes as text arguments,
+        # so selecting *.bin first can introduce frequent NUL-byte rejections.
         seed_candidates = [
-            "base.tar", "base.json", "base.bin",
-            "base.yaml", "base.yml", "base.xml", "base.webp", "base.tiff", "base.swf",
-            "seed.tar", "seed.json", "seed.bin",
-            "seed.yaml", "seed.yml", "seed.xml", "seed.webp", "seed.tiff", "seed.swf",
+            # base.*
+            "base.yaml", "base.yml", "base.json", "base.xml",
+            "base.md", "base.txt", "base.jq",
+            "base.jpg", "base.webp", "base.tiff", "base.swf", "base.tar",
+            "base.bin",
+            # seed.*
+            "seed.yaml", "seed.yml", "seed.json", "seed.xml",
+            "seed.md", "seed.txt", "seed.jq",
+            "seed.jpg", "seed.webp", "seed.tiff", "seed.swf", "seed.tar",
+            "seed.bin",
+            # task-specific common names
             "seed_pipeline.xml",  # CVE-2024-25062_libxml2 uses this name
         ]
         base_seed = None
