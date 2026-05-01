@@ -35,7 +35,7 @@ MODEL_SPECS = {
 LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
 RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
 STATE_FILE = ".run_pending_models_state.json"
-DEFAULT_MAX_STAGE_FILE_MB = 95
+DEFAULT_MAX_STAGE_FILE_MB = 90
 
 # Baseline hardcodeada a partir del estado analizado previamente.
 # Se usa para no depender de tener runs sincronizado en Kali.
@@ -57,6 +57,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-9827_libming", "llama3-8b", "L3"),
     ("CVE-2016-9827_libming", "mistral-7b", "L3"),
     ("CVE-2016-9827_libming", "qwen2.5-7b", "L3"),
+    ("CVE-2021-32292_jsonc", "llama3-8b", "L3"),
+    ("CVE-2021-32292_jsonc", "mistral-7b", "L3"),
     ("CVE-2021-32292_jsonc", "qwen2.5-7b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L3"),
