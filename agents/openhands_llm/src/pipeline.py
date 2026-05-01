@@ -165,9 +165,21 @@ def validate_seed(seed_bytes: bytes, extension: str) -> tuple[bool, str]:
         return validate_json_structure(seed_bytes)
     elif ext == ".xml":
         return validate_xml_structure(seed_bytes)
+    elif ext in {".txt", ".md", ".jq"}:
+        return validate_text_seed_structure(seed_bytes)
     else:
         # Unknown extension - default to valid (or warning)
         return True, f"Warning: No validator for extension {ext}"
+
+
+def validate_text_seed_structure(seed_bytes: bytes) -> tuple[bool, str]:
+    """
+    Validate text-like seeds used as CLI arguments.
+    NUL bytes are disallowed because several harnesses interpret seed bytes as strings.
+    """
+    if b"\x00" in seed_bytes:
+        return False, "Text seed contains NUL byte(s)"
+    return True, ""
 
 
 def validate_json_structure(seed_bytes: bytes) -> tuple[bool, str]:
