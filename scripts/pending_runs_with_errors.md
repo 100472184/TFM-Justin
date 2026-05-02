@@ -1,0 +1,119 @@
+# Pendientes y Errores de Runs
+
+- Generado: 2026-05-02T11:56:43
+- Total combinaciones inspeccionadas: 132
+- Ya existentes/omitidas por baseline: 29
+- Pendientes actuales: 103
+
+## Pendientes con error/anomalia observada
+
+- `CVE-2022-4899_zstd` | `mistral-7b` | `L3` -> ANOMALIA: seed-nul-rejected
+- `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L3` -> ANOMALIA: seed-nul-rejected
+- `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` -> FALLIDA: cannot-resolve-run-dir:no-new-valid-run-dir
+- `CVE-2024-57970_libarchive` | `llama3-8b` | `L3` -> FALLIDA: cannot-resolve-run-dir:no-new-valid-run-dir
+
+## Todas las pendientes actuales
+
+- `CVE-2022-4899_zstd` | `mistral-7b` | `L3` | max_iters=15 | ANOMALIA: seed-nul-rejected
+- `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L3` | max_iters=15 | ANOMALIA: seed-nul-rejected
+- `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` | max_iters=15 | FALLIDA: cannot-resolve-run-dir:no-new-valid-run-dir
+- `CVE-2024-57970_libarchive` | `llama3-8b` | `L3` | max_iters=15 | FALLIDA: cannot-resolve-run-dir:no-new-valid-run-dir
+- `CVE-2024-57970_libarchive` | `mistral-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `qwen2.5-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `llama3-8b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `mistral-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `qwen2.5-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `llama3-8b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `mistral-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `qwen2.5-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2014-2525_libyaml` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-5314_libtiff` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2016-9827_libming` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2021-32292_jsonc` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-29469_libxml2` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2023-39804_gnutar` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2024-57970_libarchive` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-26623_exiv2` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
+- `CVE-2025-49014_jq` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
