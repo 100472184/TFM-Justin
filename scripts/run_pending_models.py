@@ -64,6 +64,11 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L3"),
     ("CVE-2022-4899_zstd", "llama3-8b", "L3"),
+    ("CVE-2023-29469_libxml2", "llama3-8b", "L3"),
+    ("CVE-2023-29469_libxml2", "mistral-7b", "L3"),
+    ("CVE-2023-29469_libxml2", "qwen2.5-7b", "L3"),
+    ("CVE-2023-39804_gnutar", "llama3-8b", "L3"),
+    ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L3"),
 }
 
 
@@ -418,6 +423,21 @@ def has_min_run_structure(run_dir: Path, summary: dict[str, Any]) -> bool:
     return len(iter_dirs) >= 1
 
 
+def has_partial_run_structure(run_dir: Path) -> bool:
+    """
+    Best-effort structure check for partially persisted runs when summary is missing/corrupted.
+    """
+    if not run_dir.is_dir():
+        return False
+    iter_dirs = [p for p in run_dir.iterdir() if p.is_dir() and p.name.startswith("iter_")]
+    if not iter_dirs:
+        return False
+    for it in iter_dirs:
+        if (it / "generate.json").is_file() or (it / "verify.json").is_file() or (it / "analysis.json").is_file():
+            return True
+    return False
+
+
 def validate_run_dir(run_dir: Path, cve: str, level: str, expected_model: str | None = None, expected_max_iters: int | None = None) -> tuple[bool, str]:
     summary = read_summary_from_run_dir(run_dir, cve)
     if not summary:
@@ -461,6 +481,8 @@ def resolve_new_run_dir(
             )
             if ok:
                 return run_dir, "from-output"
+            if has_partial_run_structure(run_dir):
+                return run_dir, f"from-output-partial:{why}"
             return None, why
 
     if not model_dir.is_dir():
@@ -469,9 +491,10 @@ def resolve_new_run_dir(
     after_dirs = {p.name for p in model_dir.iterdir() if p.is_dir()}
     added = sorted(after_dirs - before_dirs)
     candidates: list[Path] = []
+    partial_candidates: list[tuple[Path, str]] = []
     for name in added:
         p = model_dir / name
-        ok, _ = validate_run_dir(
+        ok, why = validate_run_dir(
             p,
             combo.cve,
             combo.level,
@@ -480,10 +503,18 @@ def resolve_new_run_dir(
         )
         if ok:
             candidates.append(p)
+            continue
+        if has_partial_run_structure(p):
+            partial_candidates.append((p, why))
 
     if len(candidates) == 1:
         return candidates[0], "from-diff"
     if len(candidates) == 0:
+        if len(partial_candidates) == 1:
+            p, why = partial_candidates[0]
+            return p, f"from-diff-partial:{why}"
+        if len(partial_candidates) > 1:
+            return None, f"ambiguous-partial-run-dirs:{[c[0].name for c in partial_candidates]}"
         return None, "no-new-valid-run-dir"
     return None, f"ambiguous-new-run-dirs:{[c.name for c in candidates]}"
 
@@ -825,6 +856,12 @@ def main() -> int:
             save_state(state_path, state)
             log(f"ERROR no se pudo identificar run dir: {src_reason}")
             continue
+
+        if "partial" in src_reason:
+            if "run-dir-partial" not in run_anomalies:
+                run_anomalies.append("run-dir-partial")
+            if "summary-missing-or-invalid" in src_reason and "summary-missing-or-invalid" not in run_anomalies:
+                run_anomalies.append("summary-missing-or-invalid")
 
         if not safe_relative_to(run_dir, model_dir):
             msg = f"unsafe-source-path:{run_dir}"
