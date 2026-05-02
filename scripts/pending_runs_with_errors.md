@@ -5,19 +5,25 @@
 - Ya existentes/omitidas por baseline: 29
 - Pendientes actuales: 103
 
+## Actualizacion manual (2026-05-02, ejecucion Kali 11:57-15:31)
+
+- `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` -> COMPLETADA_CONDUCTA_SOSPECHOSA
+  - Motivo: muchas mutaciones fuera de dominio TAR (`EXIF`, `set_json_value`, JSON mal formado, timeouts), aunque la run se cerro y se staged.
+  - Recomendacion: revisar antes de incluir en commit final o rerun con guardas mas estrictas.
+- `CVE-2024-57970_libarchive` | `llama3-8b` | `L3` -> COMPLETADA_VALIDA
+  - Motivo: pipeline consistente, seeds TAR validas en multiples iteraciones, sin crash (resultado negativo, pero ejecucion util).
+  - Estado en script: marcada como ya existente para no rerun.
+
 ## Pendientes con error/anomalia observada
 
 - `CVE-2022-4899_zstd` | `mistral-7b` | `L3` -> ANOMALIA: seed-nul-rejected
 - `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L3` -> ANOMALIA: seed-nul-rejected
-- `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` -> FALLIDA: cannot-resolve-run-dir:no-new-valid-run-dir
-- `CVE-2024-57970_libarchive` | `llama3-8b` | `L3` -> FALLIDA: cannot-resolve-run-dir:no-new-valid-run-dir
+- `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` -> ANOMALIA: mutaciones-fuera-de-dominio-tar
 
 ## Todas las pendientes actuales
 
 - `CVE-2022-4899_zstd` | `mistral-7b` | `L3` | max_iters=15 | ANOMALIA: seed-nul-rejected
 - `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L3` | max_iters=15 | ANOMALIA: seed-nul-rejected
-- `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` | max_iters=15 | FALLIDA: cannot-resolve-run-dir:no-new-valid-run-dir
-- `CVE-2024-57970_libarchive` | `llama3-8b` | `L3` | max_iters=15 | FALLIDA: cannot-resolve-run-dir:no-new-valid-run-dir
 - `CVE-2024-57970_libarchive` | `mistral-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2024-57970_libarchive` | `qwen2.5-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2025-26623_exiv2` | `llama3-8b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
