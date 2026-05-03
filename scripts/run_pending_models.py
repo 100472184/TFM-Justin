@@ -51,9 +51,21 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L1"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L2"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L3"),
+    # Exclusion deliberada: CVE-2016-5314_libtiff
+    # Ver runs/CVE-2016-5314_libtiff/reproduction_analysis.md
+    # (repro no fiable en el setup actual; se evita seguir consumiendo runs).
     ("CVE-2016-5314_libtiff", "llama3-8b", "L3"),
     ("CVE-2016-5314_libtiff", "mistral-7b", "L3"),
     ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L3"),
+    ("CVE-2016-5314_libtiff", "llama3-8b", "L2"),
+    ("CVE-2016-5314_libtiff", "mistral-7b", "L2"),
+    ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L2"),
+    ("CVE-2016-5314_libtiff", "llama3-8b", "L1"),
+    ("CVE-2016-5314_libtiff", "mistral-7b", "L1"),
+    ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L1"),
+    ("CVE-2016-5314_libtiff", "llama3-8b", "L0"),
+    ("CVE-2016-5314_libtiff", "mistral-7b", "L0"),
+    ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L0"),
     ("CVE-2016-9827_libming", "llama3-8b", "L3"),
     ("CVE-2016-9827_libming", "mistral-7b", "L3"),
     ("CVE-2016-9827_libming", "qwen2.5-7b", "L3"),
