@@ -82,6 +82,10 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L2"),
+    # Exclusion deliberada: cmark-gfm con mistral deriva fuera de dominio (.md)
+    ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L2"),
+    ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L1"),
+    ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L0"),
     ("CVE-2022-4899_zstd", "llama3-8b", "L3"),
     ("CVE-2023-29469_libxml2", "llama3-8b", "L3"),
     ("CVE-2023-29469_libxml2", "mistral-7b", "L3"),

@@ -3,7 +3,7 @@
 - Generado: 2026-05-02T11:56:43
 - Total combinaciones inspeccionadas: 132
 - Ya existentes/omitidas por baseline: 29
-- Pendientes actuales: 87
+- Pendientes actuales: 84
 
 ## Actualizacion manual (2026-05-02, ejecucion Kali 11:57-15:31)
 
@@ -30,11 +30,18 @@
   - Evidencia: deriva de dominio (mutaciones `EXIF/SWF`, JSON invalido repetido, timeouts) y muchas semillas TAR invalidas.
   - Lectura: no apunta a fallo de harness TAR; apunta a mala alineacion del modelo con la tarea.
 
+- `CVE-2022-24724_cmark-gfm` | `vertex_ai/gemini-2.5-flash` | `L2` -> EXITO_CVE
+  - Evidencia: reproduccion correcta con Gemini tras deriva repetida de Mistral en `.md` (NUL bytes, JSON invalido, ops fuera de dominio).
+  - Lectura: diferencia de capacidad/alineacion por modelo en mutaciones para entrada Markdown.
+
 ## Exclusiones deliberadas del batch automatico
 
 - `CVE-2016-5314_libtiff` (todos los modelos, niveles L3/L2/L1/L0) -> EXCLUIDA_EN_SCRIPT
   - Motivo: segun `runs/CVE-2016-5314_libtiff/reproduction_analysis.md`, la reproduccion no es fiable en el setup actual (diferencias 32/64-bit, OOM/prechecks/harness).
   - Accion aplicada: se marca como existente hardcodeado en `scripts/run_pending_models.py` para evitar mas ejecuciones automaticas.
+- `CVE-2022-24724_cmark-gfm` con `mistral-7b` (niveles L2/L1/L0) -> EXCLUIDA_EN_SCRIPT
+  - Motivo: deriva persistente fuera de dominio para semillas `.md` y bajo rendimiento frente a Gemini en el mismo CVE.
+  - Accion aplicada: se marca como existente hardcodeado para no gastar ejecuciones automaticas en esas combinaciones.
 
 ## Pendientes con error/anomalia observada
 
@@ -42,6 +49,7 @@
 - `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L3` -> ANOMALIA: seed-nul-rejected
 - `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` -> ANOMALIA: mutaciones-fuera-de-dominio-tar
 - `CVE-2024-57970_libarchive` | `mistral-7b` | `L3` -> ANOMALIA: mutaciones-fuera-de-dominio-tar
+- `CVE-2022-24724_cmark-gfm` | `mistral-7b` | `L2` -> ANOMALIA: mutaciones-fuera-de-dominio-md
 
 ## Todas las pendientes actuales
 
@@ -55,7 +63,6 @@
 - `CVE-2025-49014_jq` | `llama3-8b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2025-49014_jq` | `mistral-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2025-49014_jq` | `qwen2.5-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
-- `CVE-2022-24724_cmark-gfm` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-4899_zstd` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-4899_zstd` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
@@ -82,7 +89,6 @@
 - `CVE-2021-32292_jsonc` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2021-32292_jsonc` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-24724_cmark-gfm` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
-- `CVE-2022-24724_cmark-gfm` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-4899_zstd` | `llama3-8b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-4899_zstd` | `mistral-7b` | `L1` | max_iters=45 | SIN_ERROR_OBSERVADO_AUN
@@ -110,7 +116,6 @@
 - `CVE-2021-32292_jsonc` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2021-32292_jsonc` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-24724_cmark-gfm` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
-- `CVE-2022-24724_cmark-gfm` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-4899_zstd` | `llama3-8b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2022-4899_zstd` | `mistral-7b` | `L0` | max_iters=50 | SIN_ERROR_OBSERVADO_AUN
