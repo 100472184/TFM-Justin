@@ -3,7 +3,7 @@
 - Generado: 2026-05-02T11:56:43
 - Total combinaciones inspeccionadas: 132
 - Ya existentes/omitidas por baseline: 29
-- Pendientes actuales: 84
+- Pendientes actuales: 80
 
 ## Actualizacion manual (2026-05-02, ejecucion Kali 11:57-15:31)
 
@@ -42,6 +42,12 @@
 - `CVE-2022-24724_cmark-gfm` con `mistral-7b` (niveles L2/L1/L0) -> EXCLUIDA_EN_SCRIPT
   - Motivo: deriva persistente fuera de dominio para semillas `.md` y bajo rendimiento frente a Gemini en el mismo CVE.
   - Accion aplicada: se marca como existente hardcodeado para no gastar ejecuciones automaticas en esas combinaciones.
+- `CVE-2022-24724_cmark-gfm` con `qwen2.5-7b` (nivel L2) -> CUARENTENA_EN_SCRIPT
+  - Motivo: corrida marcada con `seed-nul-rejected`; calidad insuficiente para commit sin revisión manual.
+  - Accion aplicada: fuera del batch automático hasta revisar semilla/harness.
+- `CVE-2022-4899_zstd` con `llama3-8b/mistral-7b/qwen2.5-7b` (nivel L2) -> CUARENTENA_EN_SCRIPT
+  - Motivo: anomalías de semilla (`seed-nul-rejected`) y caso parcial en `mistral` (`run-dir-partial`, `summary-missing-or-invalid`).
+  - Accion aplicada: fuera del batch automático hasta aclarar estrategia de seed/oráculo para este CVE.
 
 ## Pendientes con error/anomalia observada
 
@@ -50,6 +56,10 @@
 - `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` -> ANOMALIA: mutaciones-fuera-de-dominio-tar
 - `CVE-2024-57970_libarchive` | `mistral-7b` | `L3` -> ANOMALIA: mutaciones-fuera-de-dominio-tar
 - `CVE-2022-24724_cmark-gfm` | `mistral-7b` | `L2` -> ANOMALIA: mutaciones-fuera-de-dominio-md
+- `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L2` -> ANOMALIA: seed-nul-rejected
+- `CVE-2022-4899_zstd` | `llama3-8b` | `L2` -> ANOMALIA: seed-nul-rejected
+- `CVE-2022-4899_zstd` | `mistral-7b` | `L2` -> ANOMALIA: seed-nul-rejected,run-dir-partial,summary-missing-or-invalid
+- `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L2` -> ANOMALIA: seed-nul-rejected
 
 ## Todas las pendientes actuales
 
@@ -63,10 +73,6 @@
 - `CVE-2025-49014_jq` | `llama3-8b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2025-49014_jq` | `mistral-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2025-49014_jq` | `qwen2.5-7b` | `L3` | max_iters=15 | SIN_ERROR_OBSERVADO_AUN
-- `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
-- `CVE-2022-4899_zstd` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
-- `CVE-2022-4899_zstd` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
-- `CVE-2022-4899_zstd` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2023-29469_libxml2` | `llama3-8b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2023-29469_libxml2` | `mistral-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
 - `CVE-2023-29469_libxml2` | `qwen2.5-7b` | `L2` | max_iters=30 | SIN_ERROR_OBSERVADO_AUN
