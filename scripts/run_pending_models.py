@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import shutil
 import threading
@@ -36,6 +37,28 @@ LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
 RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
 STATE_FILE = ".run_pending_models_state.json"
 DEFAULT_MAX_STAGE_FILE_MB = 90
+
+# Keep seed discovery aligned with the pipeline, while allowing task-local
+# preference boosts (e.g., text-argument tasks).
+SEED_CANDIDATES_DEFAULT = [
+    # base.*
+    "base.yaml", "base.yml", "base.json", "base.xml",
+    "base.md", "base.txt", "base.jq",
+    "base.jpg", "base.webp", "base.tiff", "base.swf", "base.tar",
+    "base.bin",
+    # seed.*
+    "seed.yaml", "seed.yml", "seed.json", "seed.xml",
+    "seed.md", "seed.txt", "seed.jq",
+    "seed.jpg", "seed.webp", "seed.tiff", "seed.swf", "seed.tar",
+    "seed.bin",
+    # task-specific known name
+    "seed_pipeline.xml",
+]
+
+SEED_CANDIDATES_TEXT_FIRST = [
+    "base.txt", "base.jq", "base.md", "seed.txt", "seed.jq", "seed.md",
+    *SEED_CANDIDATES_DEFAULT,
+]
 
 # Baseline hardcodeada a partir del estado analizado previamente.
 # Se usa para no depender de tener runs sincronizado en Kali.
@@ -132,6 +155,7 @@ def run_cmd(
     dry_run: bool,
     capture_output: bool = False,
     timeout_sec: int | None = None,
+    env: dict[str, str] | None = None,
 ) -> CmdResult:
     cmd_text = " ".join(args)
     if dry_run:
@@ -148,6 +172,7 @@ def run_cmd(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=1,
+                env=env,
             )
             stdout_chunks: list[str] = []
             stderr_chunks: list[str] = []
@@ -203,7 +228,7 @@ def run_cmd(
                 timed_out=False,
             )
 
-        proc = subprocess.run(args, cwd=str(cwd), text=True, check=False, timeout=timeout_sec)
+        proc = subprocess.run(args, cwd=str(cwd), text=True, check=False, timeout=timeout_sec, env=env)
         return CmdResult(returncode=proc.returncode, output="", timed_out=False)
     except subprocess.TimeoutExpired as e:
         stdout = e.stdout or ""
@@ -560,6 +585,23 @@ def ensure_tools(repo_root: Path, require_docker: bool) -> None:
         proc = subprocess.run(cmd, cwd=str(repo_root), text=True, capture_output=True, check=False)
         if proc.returncode != 0:
             raise RuntimeError(f"Comando requerido no disponible: {' '.join(cmd)}")
+    if require_docker:
+        # Docker binary can exist while daemon is down; fail fast in that case.
+        dproc = subprocess.run(
+            ["docker", "info"],
+            cwd=str(repo_root),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        if dproc.returncode != 0:
+            detail = (dproc.stderr or dproc.stdout or "").strip()
+            raise RuntimeError(
+                "Docker daemon no disponible en esta terminal. "
+                "Inicia Docker y reintenta. "
+                f"Detalle: {detail[:200]}"
+            )
     proc = subprocess.run(
         ["python", "-m", "agents.openhands_llm.run", "--help"],
         cwd=str(repo_root),
@@ -626,6 +668,8 @@ def classify_pipeline_failure(output: str) -> str | None:
         return "pipeline-container-start-failed"
     if "permission denied: unknown" in text:
         return "pipeline-container-permission-denied"
+    if "invalid port: '11434:generatecontent'" in text:
+        return "pipeline-vertex-api-base-leak"
     return None
 
 
@@ -648,6 +692,8 @@ def detect_run_anomalies(output: str) -> list[str]:
         add("harness-seed-not-found")
     if "target binary not found or not executable" in text:
         add("harness-target-not-executable")
+    if "invalid port: '11434:generatecontent'" in text:
+        add("vertex-api-base-leak")
 
     # Container runtime errors that can still leave partial artifacts
     if "oci runtime create failed" in text or "failed to create shim task" in text:
@@ -682,6 +728,60 @@ def update_combo_state(state: dict[str, Any], combo: Combo, status: str, detail:
 
 def task_exists(repo_root: Path, cve: str) -> bool:
     return (repo_root / "tasks" / cve / "task.yml").is_file()
+
+
+def task_harness_exists(repo_root: Path, cve: str) -> bool:
+    return (repo_root / "tasks" / cve / "harness" / "run.sh").is_file()
+
+
+def _read_text_if_exists(p: Path) -> str:
+    if not p.is_file():
+        return ""
+    try:
+        return p.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _task_prefers_text_seed(repo_root: Path, cve: str) -> bool:
+    task_dir = repo_root / "tasks" / cve
+    yml = _read_text_if_exists(task_dir / "task.yml").lower()
+    harness = _read_text_if_exists(task_dir / "harness" / "run.sh").lower()
+    if "<arg_from_seed>" in yml:
+        return True
+    text_markers = [
+        "treats seeds as text arguments",
+        "utf-8 jq program text",
+        "outdir=\"$(cat \"$seed\")\"",
+    ]
+    return any(m in harness for m in text_markers)
+
+
+def choose_seed_for_task(repo_root: Path, cve: str) -> tuple[Path | None, str]:
+    seeds_dir = repo_root / "tasks" / cve / "seeds"
+    if not seeds_dir.is_dir():
+        return None, "seed-dir-missing"
+    candidates = (
+        SEED_CANDIDATES_TEXT_FIRST
+        if _task_prefers_text_seed(repo_root, cve)
+        else SEED_CANDIDATES_DEFAULT
+    )
+    for name in candidates:
+        p = seeds_dir / name
+        if p.is_file():
+            return p, f"seed-selected:{name}"
+    return None, "seed-not-found"
+
+
+def build_run_env(model_spec: str) -> tuple[dict[str, str], list[str]]:
+    env = os.environ.copy()
+    sanitized: list[str] = []
+    if model_spec.startswith("vertex_ai/"):
+        for key in ("LLM_BASE_URL", "OLLAMA_API_BASE", "OLLAMA_HOST"):
+            if env.get(key):
+                env.pop(key, None)
+                sanitized.append(key)
+    return env, sanitized
 
 
 def build_combos(
@@ -800,12 +900,18 @@ def main() -> int:
 
         if dry_run:
             log(f"DRY-RUN plan: run + rename -> {dest}")
+            seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve)
+            seed_fragment = f" --seed {seed_path}" if seed_path else ""
             cmd = (
                 f"python -m agents.openhands_llm.run --task-id {combo.cve} --level {combo.level} "
                 f"--max-iters {combo.max_iters} --model {combo.model_spec} "
-                f"--kill-running-containers-after-iter"
+                f"--kill-running-containers-after-iter{seed_fragment}"
             )
             log(f"DRY-RUN run-cmd: {cmd}")
+            log(f"DRY-RUN seed-policy: {seed_reason}")
+            _, sanitized = build_run_env(combo.model_spec)
+            if sanitized:
+                log(f"DRY-RUN env-sanitize: {','.join(sanitized)}")
             log(f"DRY-RUN mv: <new_run_dir> -> {dest}")
             log(f"DRY-RUN git add: git add -f -- {dest.relative_to(repo_root).as_posix()}")
             update_combo_state(state, combo, "planned", "dry-run")
@@ -814,6 +920,22 @@ def main() -> int:
 
         if not task_exists(repo_root, combo.cve):
             msg = f"task-missing: tasks/{combo.cve}/task.yml"
+            failed.append((combo, msg))
+            update_combo_state(state, combo, "failed", msg)
+            save_state(state_path, state)
+            log(f"ERROR {msg}")
+            continue
+        if not task_harness_exists(repo_root, combo.cve):
+            msg = f"harness-missing: tasks/{combo.cve}/harness/run.sh"
+            failed.append((combo, msg))
+            update_combo_state(state, combo, "failed", msg)
+            save_state(state_path, state)
+            log(f"ERROR {msg}")
+            continue
+
+        seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve)
+        if seed_path is None:
+            msg = f"{seed_reason}: tasks/{combo.cve}/seeds"
             failed.append((combo, msg))
             update_combo_state(state, combo, "failed", msg)
             save_state(state_path, state)
@@ -838,11 +960,24 @@ def main() -> int:
             "--model",
             combo.model_spec,
             "--kill-running-containers-after-iter",
+            "--seed",
+            str(seed_path),
         ]
+        run_env, sanitized_env = build_run_env(combo.model_spec)
+        if sanitized_env:
+            log(f"INFO env sanitizado para {combo.model_spec}: {','.join(sanitized_env)}")
+        log(f"INFO {seed_reason} para {combo.cve}")
         update_combo_state(state, combo, "running", "launched")
         save_state(state_path, state)
         try:
-            run_res = run_cmd(cmd, cwd=repo_root, dry_run=False, capture_output=True, timeout_sec=args.run_timeout_sec)
+            run_res = run_cmd(
+                cmd,
+                cwd=repo_root,
+                dry_run=False,
+                capture_output=True,
+                timeout_sec=args.run_timeout_sec,
+                env=run_env,
+            )
         except KeyboardInterrupt:
             msg = "keyboard-interrupt-during-run"
             failed.append((combo, msg))

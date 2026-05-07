@@ -175,7 +175,15 @@ class OpenHandsLLMClient:
             if self.api_key:
                 self.llm_kwargs["api_key"] = self.api_key
             
-            if self.base_url:
+            # IMPORTANT:
+            # Vertex AI models should not inherit Ollama/custom api_base values
+            # from env vars (e.g., LLM_BASE_URL=http://...:11434), because LiteLLM
+            # builds Vertex URLs differently and this breaks with errors like:
+            # "Invalid port: '11434:generateContent'".
+            if is_vertex:
+                if self.base_url:
+                    print("Note: ignoring LLM_BASE_URL/OLLAMA_* for vertex_ai model")
+            elif self.base_url:
                 self.llm_kwargs["api_base"] = self.base_url
             
             # Debug: log effective LLM configuration (helps validate LLM_BASE_URL usage)
