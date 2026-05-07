@@ -97,6 +97,9 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2023-29469_libxml2", "mistral-7b", "L3"),
     ("CVE-2023-29469_libxml2", "qwen2.5-7b", "L3"),
     ("CVE-2023-39804_gnutar", "llama3-8b", "L3"),
+    ("CVE-2023-39804_gnutar", "llama3-8b", "L2"),
+    ("CVE-2023-39804_gnutar", "mistral-7b", "L2"),
+    ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L2"),
     ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L3"),
     ("CVE-2024-57970_libarchive", "llama3-8b", "L3"),
 }
