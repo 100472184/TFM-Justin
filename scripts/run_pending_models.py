@@ -125,6 +125,11 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L2"),
     ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L3"),
     ("CVE-2024-57970_libarchive", "llama3-8b", "L3"),
+    # Cuarentena temporal: combinaciones L2 con timeout prolongado o bloqueo manual
+    # en ejecuciones largas (>=12000s) sin artefacto util de run.
+    ("CVE-2024-57970_libarchive", "mistral-7b", "L2"),
+    ("CVE-2025-26623_exiv2", "mistral-7b", "L2"),
+    ("CVE-2025-26623_exiv2", "qwen2.5-7b", "L2"),
 }
 
 
