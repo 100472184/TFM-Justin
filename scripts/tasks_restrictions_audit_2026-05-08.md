@@ -127,3 +127,43 @@ Rationale:
    - high invalid-mutation ratio,
    - repeated infrastructure/model timeouts.
 5. **Medium priority:** validate quarantined triples periodically (e.g., after prompt/mutation engine improvements) before permanently discarding.
+
+---
+
+## Update 2026-05-09 (Libming Seed Root Cause + jq L2 Anomalies)
+
+### Confirmed Root Cause: `seed-not-found` in `CVE-2016-9827_libming`
+1. Historical Gemini run evidence confirms SWF seed semantics:
+   - `runs/CVE-2016-9827_libming/gemini-2.5-flash/sucess_L2_CVE-2016-9827_libming/iter_001/command.txt`
+   - Mutated file is `mutated_seed_it01.swf` (mounted to `/input/seed.bin`).
+2. `tasks/CVE-2016-9827_libming/seeds/` had `gen_swf.py` but no pre-existing `base.swf`.
+3. `scripts/run_pending_models.py` previously only searched static filenames; it did not attempt seed generation scripts, causing `seed-not-found` in L1/L0 combos.
+
+### Hardening Applied
+1. `scripts/run_pending_models.py` now:
+   - auto-detects seed generators (`gen_*.py`, `generate_*.py`, `make_*.py`) inside task `seeds/`,
+   - runs them automatically in execute mode when no candidate seed exists,
+   - re-scans and selects generated seed (e.g., `base.swf`),
+   - reports explicit reason codes in logs/state (`generated-by:<script>` or generator failure details).
+2. Dry-run remains non-destructive and reports when a generator is available.
+3. Added seed lock for strict parity in `CVE-2016-9827_libming`:
+   - required filename: `base.swf`
+   - required SHA-256: `74d50d87f446dcd17922ae39f454c5e40ba8c2815f6da43d2d0a07f110e51fd0`
+   - if mismatch, autoscript fails fast instead of running with a different base seed.
+
+### Repository State Verified
+1. `tasks/CVE-2016-9827_libming/seeds/base.swf` is now generated and available.
+   - Canonical bytes: `465753080f00000000000c01000000` (15 bytes).
+   - SHA-256: `74d50d87f446dcd17922ae39f454c5e40ba8c2815f6da43d2d0a07f110e51fd0`.
+   - Validation: replaying `iter_001` recorded mutations reproduces `mutated_seed_it01.swf` bit-by-bit.
+2. Audit sweep for similar misconfigurations (generator present + no recognized seed file) currently returns only:
+   - `CVE-2016-9827_libming` (`gen_swf.py`).
+
+### New Runtime Findings to Track
+1. `CVE-2025-49014_jq` L2:
+   - `llama3-8b`: staged with anomaly `seed-nul-rejected`.
+   - `qwen2.5-7b`: staged with anomaly `seed-nul-rejected`.
+2. `CVE-2025-49014_jq` L2:
+   - `mistral-7b`: failed by `pipeline-timeout:20000s`.
+3. `CVE-2021-32292_jsonc` L1:
+   - interrupted manually (`keyboard-interrupt-during-run`), pending rerun for full status.

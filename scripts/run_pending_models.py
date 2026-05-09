@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -59,6 +60,15 @@ SEED_CANDIDATES_TEXT_FIRST = [
     "base.txt", "base.jq", "base.md", "seed.txt", "seed.jq", "seed.md",
     *SEED_CANDIDATES_DEFAULT,
 ]
+SEED_GENERATOR_GLOBS = ["gen_*.py", "generate_*.py", "make_*.py"]
+SEED_GENERATOR_TIMEOUT_SEC = 60
+LOCKED_BASE_SEEDS: dict[str, dict[str, str]] = {
+    # Canonical seed recovered from historical Gemini runs for reproducibility parity.
+    "CVE-2016-9827_libming": {
+        "filename": "base.swf",
+        "sha256": "74d50d87f446dcd17922ae39f454c5e40ba8c2815f6da43d2d0a07f110e51fd0",
+    }
+}
 
 # Baseline hardcodeada a partir del estado analizado previamente.
 # Se usa para no depender de tener runs sincronizado en Kali.
@@ -130,6 +140,9 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-57970_libarchive", "mistral-7b", "L2"),
     ("CVE-2025-26623_exiv2", "mistral-7b", "L2"),
     ("CVE-2025-26623_exiv2", "qwen2.5-7b", "L2"),
+    # Marcadas como completadas/staged por ejecucion manual validada.
+    ("CVE-2025-49014_jq", "llama3-8b", "L2"),
+    ("CVE-2025-49014_jq", "qwen2.5-7b", "L2"),
 }
 
 
@@ -762,10 +775,7 @@ def _task_prefers_text_seed(repo_root: Path, cve: str) -> bool:
     return any(m in harness for m in text_markers)
 
 
-def choose_seed_for_task(repo_root: Path, cve: str) -> tuple[Path | None, str]:
-    seeds_dir = repo_root / "tasks" / cve / "seeds"
-    if not seeds_dir.is_dir():
-        return None, "seed-dir-missing"
+def _pick_seed_candidate(repo_root: Path, cve: str, seeds_dir: Path) -> tuple[Path | None, str]:
     candidates = (
         SEED_CANDIDATES_TEXT_FIRST
         if _task_prefers_text_seed(repo_root, cve)
@@ -776,6 +786,98 @@ def choose_seed_for_task(repo_root: Path, cve: str) -> tuple[Path | None, str]:
         if p.is_file():
             return p, f"seed-selected:{name}"
     return None, "seed-not-found"
+
+
+def _list_seed_generators(seeds_dir: Path) -> list[Path]:
+    scripts: list[Path] = []
+    seen: set[Path] = set()
+    for pattern in SEED_GENERATOR_GLOBS:
+        for p in sorted(seeds_dir.glob(pattern)):
+            if p.is_file() and p not in seen:
+                scripts.append(p)
+                seen.add(p)
+    return scripts
+
+
+def _run_seed_generator(repo_root: Path, script: Path) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(repo_root),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=SEED_GENERATOR_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"timeout:{script.name}:{SEED_GENERATOR_TIMEOUT_SEC}s"
+
+    if proc.returncode == 0:
+        return True, f"ok:{script.name}"
+
+    out = (proc.stdout or "").strip().replace("\n", " ")[:140]
+    err = (proc.stderr or "").strip().replace("\n", " ")[:140]
+    detail = err or out or f"rc={proc.returncode}"
+    return False, f"fail:{script.name}:{detail}"
+
+
+def _validate_locked_seed(cve: str, seed_path: Path) -> tuple[bool, str]:
+    lock = LOCKED_BASE_SEEDS.get(cve)
+    if not lock:
+        return True, ""
+
+    expected_name = lock.get("filename", "")
+    expected_sha = lock.get("sha256", "").lower()
+    if expected_name and seed_path.name != expected_name:
+        return False, f"seed-lock-name-mismatch:expected:{expected_name}:got:{seed_path.name}"
+
+    digest = hashlib.sha256(seed_path.read_bytes()).hexdigest().lower()
+    if expected_sha and digest != expected_sha:
+        return False, f"seed-lock-hash-mismatch:{seed_path.name}:{digest}:expected:{expected_sha}"
+
+    return True, f"seed-locked:{seed_path.name}:{expected_sha[:12]}"
+
+
+def choose_seed_for_task(
+    repo_root: Path,
+    cve: str,
+    auto_generate: bool = False,
+) -> tuple[Path | None, str]:
+    seeds_dir = repo_root / "tasks" / cve / "seeds"
+    if not seeds_dir.is_dir():
+        return None, "seed-dir-missing"
+    seed, reason = _pick_seed_candidate(repo_root, cve, seeds_dir)
+    if seed:
+        ok, lock_reason = _validate_locked_seed(cve, seed)
+        if ok:
+            if lock_reason:
+                return seed, f"{reason}({lock_reason})"
+            return seed, reason
+        reason = f"{reason}({lock_reason})"
+
+    generators = _list_seed_generators(seeds_dir)
+    if not generators:
+        return None, reason
+
+    if not auto_generate:
+        return None, f"{reason}(generator-available:{','.join(g.name for g in generators)})"
+
+    generator_results: list[str] = []
+    for script in generators:
+        ok, detail = _run_seed_generator(repo_root, script)
+        generator_results.append(detail)
+        if ok:
+            seed, reason = _pick_seed_candidate(repo_root, cve, seeds_dir)
+            if seed:
+                lock_ok, lock_reason = _validate_locked_seed(cve, seed)
+                if lock_ok:
+                    suffix = f"(generated-by:{script.name})"
+                    if lock_reason:
+                        suffix += f"({lock_reason})"
+                    return seed, f"{reason}{suffix}"
+                reason = f"{reason}(generated-by:{script.name})({lock_reason})"
+
+    return None, f"{reason}(generator-attempted:{';'.join(generator_results)})"
 
 
 def build_run_env(model_spec: str) -> tuple[dict[str, str], list[str]]:
@@ -905,7 +1007,7 @@ def main() -> int:
 
         if dry_run:
             log(f"DRY-RUN plan: run + rename -> {dest}")
-            seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve)
+            seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve, auto_generate=False)
             seed_fragment = f" --seed {seed_path}" if seed_path else ""
             cmd = (
                 f"python -m agents.openhands_llm.run --task-id {combo.cve} --level {combo.level} "
@@ -938,7 +1040,7 @@ def main() -> int:
             log(f"ERROR {msg}")
             continue
 
-        seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve)
+        seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve, auto_generate=True)
         if seed_path is None:
             msg = f"{seed_reason}: tasks/{combo.cve}/seeds"
             failed.append((combo, msg))
