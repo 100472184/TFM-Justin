@@ -164,6 +164,8 @@ Rationale:
    - `llama3-8b`: staged with anomaly `seed-nul-rejected`.
    - `qwen2.5-7b`: staged with anomaly `seed-nul-rejected`.
 2. `CVE-2025-49014_jq` L2:
-   - `mistral-7b`: failed by `pipeline-timeout:20000s`.
+   - `mistral-7b`: initially failed by `pipeline-timeout:20000s`; later retry also failed by `pipeline-timeout:30000s`.
+   - Failure pattern: persistent cross-domain mutation drift (`append_swf_tag`, EXIF-like ops, JSON-only ops on text seed), repeated JSON parse failures, frequent `Text seed contains NUL byte(s)`, and intermittent Ollama 120s API timeouts.
+   - Operational decision: quarantined in autoscript for `L2/L1/L0` (`CVE-2025-49014_jq` + `mistral-7b`) to avoid blocking queue throughput without generating useful differential artifacts.
 3. `CVE-2021-32292_jsonc` L1:
    - interrupted manually (`keyboard-interrupt-during-run`), pending rerun for full status.

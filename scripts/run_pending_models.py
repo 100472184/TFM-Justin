@@ -140,6 +140,11 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-57970_libarchive", "mistral-7b", "L2"),
     ("CVE-2025-26623_exiv2", "mistral-7b", "L2"),
     ("CVE-2025-26623_exiv2", "qwen2.5-7b", "L2"),
+    # Cuarentena temporal: mistral en jq deriva fuera de dominio (ops SWF/EXIF/JSON),
+    # reintentos de parseo JSON y timeouts prolongados sin artefacto diferencial util.
+    ("CVE-2025-49014_jq", "mistral-7b", "L2"),
+    ("CVE-2025-49014_jq", "mistral-7b", "L1"),
+    ("CVE-2025-49014_jq", "mistral-7b", "L0"),
     # Marcadas como completadas/staged por ejecucion manual validada.
     ("CVE-2025-49014_jq", "llama3-8b", "L2"),
     ("CVE-2025-49014_jq", "qwen2.5-7b", "L2"),
