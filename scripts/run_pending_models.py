@@ -142,6 +142,9 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     # Cuarentena L1 (2026-05-10): corte anticipado por `LLM requested early stop`
     # con deriva de ANALYZE fuera de CVE (respuesta menciona CVE ajeno).
     ("CVE-2022-4899_zstd", "llama3-8b", "L1"),
+    # Cuarentena L1 (2026-05-10): deriva persistente de Mistral fuera de dominio
+    # en tarea .txt (ops SWF/EXIF y parseo JSON inestable) frente a baseline Gemini L1.
+    ("CVE-2022-4899_zstd", "mistral-7b", "L1"),
     ("CVE-2023-29469_libxml2", "llama3-8b", "L3"),
     ("CVE-2023-29469_libxml2", "mistral-7b", "L3"),
     ("CVE-2023-29469_libxml2", "qwen2.5-7b", "L3"),
