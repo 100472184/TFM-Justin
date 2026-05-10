@@ -253,3 +253,25 @@ Updated `scripts/run_pending_models.py` hardcoded baseline:
 3. Interpretation:
    - this strongly supports a **model-specific capability/alignment gap** for `mistral-7b` on this CVE/task shape,
    - it does **not** indicate an infrastructure/harness issue, because same task+seed reproduces quickly with Gemini.
+
+### Follow-up 2026-05-10 (L1 additional batch + harness regression fix)
+1. New completed/staged L1 runs integrated into autoscript baseline:
+   - `CVE-2022-4899_zstd` + `qwen2.5-7b` + `L1`
+   - `CVE-2024-57970_libarchive` + `llama3-8b` + `L1`
+2. Root cause analysis for `harness-missing` in `CVE-2023-29469_libxml2`:
+   - failure surfaced as `harness-missing: tasks/CVE-2023-29469_libxml2/harness/run.sh`,
+   - task actually uses `task.yml` `run.argv_template` (`/harness/harness`, `/input/seed.xml`) and Docker entrypoint-based execution,
+   - `harness/run.sh` is not part of this task design (only `harness.c`/`harness_direct.c` are present).
+3. Fix applied:
+   - `scripts/run_pending_models.py` harness detection now accepts:
+     - `harness/run.sh`, or
+     - `task.yml` with `run.argv_template`, or
+     - `compose.yml` entrypoint pointing to `/harness...`.
+   - this removes the false negative for libxml2 while preserving missing-harness detection for genuinely broken tasks.
+4. Behavior review for `CVE-2024-57970_libarchive` + `mistral-7b` + `L1` (user log, interrupted run):
+   - repeated cross-domain mutations (`append_swf_tag`, EXIF-like operations, JSON-only ops on TAR seed),
+   - recurrent JSON parse failures/timeouts and many structurally invalid TAR attempts (`bad checksum`),
+   - frequent non-differential VERIFY outcomes (`Unrecognized archive format` in both vuln/fixed).
+5. Verdict:
+   - this is **not normal progress** relative to the existing Gemini baseline for this CVE family,
+   - it matches prior mistral drift signatures already observed in TAR tasks.

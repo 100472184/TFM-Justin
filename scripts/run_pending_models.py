@@ -139,6 +139,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-4899_zstd", "llama3-8b", "L2"),
     ("CVE-2022-4899_zstd", "mistral-7b", "L2"),
     ("CVE-2022-4899_zstd", "qwen2.5-7b", "L2"),
+    # L1 completada y staged (2026-05-10).
+    ("CVE-2022-4899_zstd", "qwen2.5-7b", "L1"),
     # Cuarentena L1 (2026-05-10): corte anticipado por `LLM requested early stop`
     # con deriva de ANALYZE fuera de CVE (respuesta menciona CVE ajeno).
     ("CVE-2022-4899_zstd", "llama3-8b", "L1"),
@@ -154,6 +156,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L2"),
     ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L3"),
     ("CVE-2024-57970_libarchive", "llama3-8b", "L3"),
+    # L1 completada y staged (2026-05-10).
+    ("CVE-2024-57970_libarchive", "llama3-8b", "L1"),
     # Cuarentena temporal: combinaciones L2 con timeout prolongado o bloqueo manual
     # en ejecuciones largas (>=12000s) sin artefacto util de run.
     ("CVE-2024-57970_libarchive", "mistral-7b", "L2"),
@@ -789,8 +793,26 @@ def task_exists(repo_root: Path, cve: str) -> bool:
     return (repo_root / "tasks" / cve / "task.yml").is_file()
 
 
-def task_harness_exists(repo_root: Path, cve: str) -> bool:
-    return (repo_root / "tasks" / cve / "harness" / "run.sh").is_file()
+def task_harness_exists(repo_root: Path, cve: str) -> tuple[bool, str]:
+    """
+    Detect whether the task has an executable harness definition.
+    Some tasks use `harness/run.sh`; others define execution directly in task.yml
+    (`run.argv_template`) and rely on Docker entrypoints.
+    """
+    task_dir = repo_root / "tasks" / cve
+    run_sh = task_dir / "harness" / "run.sh"
+    if run_sh.is_file():
+        return True, "harness/run.sh"
+
+    task_yml = _read_text_if_exists(task_dir / "task.yml").lower()
+    if "run:" in task_yml and "argv_template:" in task_yml:
+        return True, "task.yml:run.argv_template"
+
+    compose_yml = _read_text_if_exists(task_dir / "compose.yml").lower()
+    if "entrypoint:" in compose_yml and "/harness" in compose_yml:
+        return True, "compose.yml:entrypoint:/harness"
+
+    return False, f"tasks/{cve}/harness/run.sh"
 
 
 def _read_text_if_exists(p: Path) -> str:
@@ -1073,13 +1095,16 @@ def main() -> int:
             save_state(state_path, state)
             log(f"ERROR {msg}")
             continue
-        if not task_harness_exists(repo_root, combo.cve):
-            msg = f"harness-missing: tasks/{combo.cve}/harness/run.sh"
+        harness_ok, harness_probe = task_harness_exists(repo_root, combo.cve)
+        if not harness_ok:
+            msg = f"harness-missing: {harness_probe}"
             failed.append((combo, msg))
             update_combo_state(state, combo, "failed", msg)
             save_state(state_path, state)
             log(f"ERROR {msg}")
             continue
+        if harness_probe != "harness/run.sh":
+            log(f"INFO harness-detected:{harness_probe} para {combo.cve}")
 
         seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve, auto_generate=True)
         if seed_path is None:
