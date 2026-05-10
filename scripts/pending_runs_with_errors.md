@@ -5,6 +5,31 @@
 - Ya existentes/omitidas por baseline: 29
 - Pendientes actuales: 80
 
+## Actualizacion manual (2026-05-10, triage L1)
+
+> Nota: esta actualizacion supersede parcialmente el bloque historico de "Todas las pendientes actuales" generado el 2026-05-02 para las combinaciones L1 mencionadas abajo.
+
+- Completadas y staged (segun salida de batch):
+  - `CVE-2016-9827_libming` | `llama3-8b` | `L1`
+  - `CVE-2016-9827_libming` | `mistral-7b` | `L1`
+  - `CVE-2016-9827_libming` | `qwen2.5-7b` | `L1`
+  - `CVE-2021-32292_jsonc` | `llama3-8b` | `L1`
+  - `CVE-2021-32292_jsonc` | `mistral-7b` | `L1`
+  - `CVE-2021-32292_jsonc` | `qwen2.5-7b` | `L1`
+  - `CVE-2022-24724_cmark-gfm` | `llama3-8b` | `L1`
+
+- Anomalas detectadas en ese lote:
+  - `CVE-2021-32292_jsonc` | `mistral-7b` | `L1` -> `run-dir-partial`, `summary-missing-or-invalid`
+  - `CVE-2022-24724_cmark-gfm` | `llama3-8b` | `L1` -> `seed-nul-rejected`
+
+- Fallida:
+  - `CVE-2022-24724_cmark-gfm` | `qwen2.5-7b` | `L1` -> `keyboard-interrupt-during-run`
+
+- Politica aplicada en `scripts/run_pending_models.py`:
+  - Marcadas como existentes: `libming L1 (3 modelos)`, `jsonc L1 (llama3-8b y qwen2.5-7b)`.
+  - Cuarentena en baseline: `jsonc mistral-7b L1`, `cmark-gfm llama3-8b L1`.
+  - Se mantiene pendiente para rerun: `cmark-gfm qwen2.5-7b L1` (interrupcion manual, sin veredicto de calidad).
+
 ## Actualizacion manual (2026-05-02, ejecucion Kali 11:57-15:31)
 
 - `CVE-2023-39804_gnutar` | `mistral-7b` | `L3` -> COMPLETADA_CONDUCTA_SOSPECHOSA

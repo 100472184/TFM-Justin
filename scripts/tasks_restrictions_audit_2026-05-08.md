@@ -168,4 +168,40 @@ Rationale:
    - Failure pattern: persistent cross-domain mutation drift (`append_swf_tag`, EXIF-like ops, JSON-only ops on text seed), repeated JSON parse failures, frequent `Text seed contains NUL byte(s)`, and intermittent Ollama 120s API timeouts.
    - Operational decision: quarantined in autoscript for `L2/L1/L0` (`CVE-2025-49014_jq` + `mistral-7b`) to avoid blocking queue throughput without generating useful differential artifacts.
 3. `CVE-2021-32292_jsonc` L1:
-   - interrupted manually (`keyboard-interrupt-during-run`), pending rerun for full status.
+   - interrupted manually (`keyboard-interrupt-during-run`) in an earlier run snapshot.
+   - superseded by 2026-05-10 triage update (new L1 runs recorded and policy adjusted).
+
+---
+
+## Update 2026-05-10 (L1 Batch Triage + Quarantine Decisions)
+
+### New L1 Execution Results (reported from batch run)
+Completed and staged:
+1. `CVE-2016-9827_libming` + `llama3-8b` + `L1`
+2. `CVE-2016-9827_libming` + `mistral-7b` + `L1`
+3. `CVE-2016-9827_libming` + `qwen2.5-7b` + `L1`
+4. `CVE-2021-32292_jsonc` + `llama3-8b` + `L1`
+5. `CVE-2021-32292_jsonc` + `mistral-7b` + `L1`
+6. `CVE-2021-32292_jsonc` + `qwen2.5-7b` + `L1`
+7. `CVE-2022-24724_cmark-gfm` + `llama3-8b` + `L1`
+
+Anomalous (staged, manual review needed):
+1. `CVE-2021-32292_jsonc` + `mistral-7b` + `L1`
+   - Flags: `run-dir-partial`, `summary-missing-or-invalid`
+2. `CVE-2022-24724_cmark-gfm` + `llama3-8b` + `L1`
+   - Flag: `seed-nul-rejected`
+
+Failed:
+1. `CVE-2022-24724_cmark-gfm` + `qwen2.5-7b` + `L1`
+   - `keyboard-interrupt-during-run`
+
+### Automation Policy Applied
+Updated `scripts/run_pending_models.py` hardcoded baseline:
+1. Marked as existing/completed:
+   - `CVE-2016-9827_libming` (`llama3-8b/mistral-7b/qwen2.5-7b`) at `L1`
+   - `CVE-2021-32292_jsonc` (`llama3-8b`, `qwen2.5-7b`) at `L1`
+2. Quarantined (excluded from rerun queue due to anomalous artifacts):
+   - `CVE-2021-32292_jsonc` + `mistral-7b` + `L1`
+   - `CVE-2022-24724_cmark-gfm` + `llama3-8b` + `L1`
+3. Left pending for rerun (not quarantined automatically):
+   - `CVE-2022-24724_cmark-gfm` + `qwen2.5-7b` + `L1` (manual interruption, no quality verdict yet)

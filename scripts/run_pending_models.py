@@ -105,16 +105,27 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-9827_libming", "llama3-8b", "L2"),
     ("CVE-2016-9827_libming", "mistral-7b", "L2"),
     ("CVE-2016-9827_libming", "qwen2.5-7b", "L2"),
+    # L1 completadas y staged (2026-05-10).
+    ("CVE-2016-9827_libming", "llama3-8b", "L1"),
+    ("CVE-2016-9827_libming", "mistral-7b", "L1"),
+    ("CVE-2016-9827_libming", "qwen2.5-7b", "L1"),
     ("CVE-2021-32292_jsonc", "llama3-8b", "L3"),
     ("CVE-2021-32292_jsonc", "mistral-7b", "L3"),
     ("CVE-2021-32292_jsonc", "qwen2.5-7b", "L3"),
     ("CVE-2021-32292_jsonc", "llama3-8b", "L2"),
     ("CVE-2021-32292_jsonc", "mistral-7b", "L2"),
     ("CVE-2021-32292_jsonc", "qwen2.5-7b", "L2"),
+    # L1 completadas y staged (2026-05-10).
+    ("CVE-2021-32292_jsonc", "llama3-8b", "L1"),
+    ("CVE-2021-32292_jsonc", "qwen2.5-7b", "L1"),
+    # Cuarentena L1 por artefacto parcial/anomalo (run-dir-partial, summary-missing-or-invalid).
+    ("CVE-2021-32292_jsonc", "mistral-7b", "L1"),
     ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L2"),
+    # Cuarentena L1 por anomalia de semilla (seed-nul-rejected) en task de texto.
+    ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L1"),
     # Exclusion deliberada: cmark-gfm con mistral deriva fuera de dominio (.md)
     ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L2"),
     ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L1"),
