@@ -126,6 +126,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L2"),
     # Cuarentena L1 por anomalia de semilla (seed-nul-rejected) en task de texto.
     ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L1"),
+    # L1 completada posteriormente (2026-05-10) tras rerun completo.
+    ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L1"),
     # Exclusion deliberada: cmark-gfm con mistral deriva fuera de dominio (.md)
     ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L2"),
     ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L1"),
@@ -137,6 +139,9 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-4899_zstd", "llama3-8b", "L2"),
     ("CVE-2022-4899_zstd", "mistral-7b", "L2"),
     ("CVE-2022-4899_zstd", "qwen2.5-7b", "L2"),
+    # Cuarentena L1 (2026-05-10): corte anticipado por `LLM requested early stop`
+    # con deriva de ANALYZE fuera de CVE (respuesta menciona CVE ajeno).
+    ("CVE-2022-4899_zstd", "llama3-8b", "L1"),
     ("CVE-2023-29469_libxml2", "llama3-8b", "L3"),
     ("CVE-2023-29469_libxml2", "mistral-7b", "L3"),
     ("CVE-2023-29469_libxml2", "qwen2.5-7b", "L3"),
@@ -739,6 +744,23 @@ def detect_run_anomalies(output: str) -> list[str]:
     return anomalies
 
 
+def normalize_run_anomalies(repo_root: Path, cve: str, anomalies: list[str], output: str) -> list[str]:
+    """
+    Reduce false-positive anomaly noise.
+    For text-semantics tasks, `seed-nul-rejected` can appear in early retries and still
+    converge to valid seeds that reach VERIFY. In that case, do not mark the full run as anomalous.
+    """
+    uniq = list(dict.fromkeys(anomalies))
+    if (
+        len(uniq) == 1
+        and uniq[0] == "seed-nul-rejected"
+        and _task_prefers_text_seed(repo_root, cve)
+        and "Testing vulnerable version..." in (output or "")
+    ):
+        return []
+    return uniq
+
+
 def save_state(state_path: Path, data: dict[str, Any]) -> None:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = state_path.with_suffix(state_path.suffix + ".tmp")
@@ -1109,7 +1131,12 @@ def main() -> int:
             log("Interrupcion manual detectada (Ctrl+C). Abortando batch de forma segura.")
             break
         output = run_res.output
-        run_anomalies = detect_run_anomalies(output)
+        run_anomalies = normalize_run_anomalies(
+            repo_root=repo_root,
+            cve=combo.cve,
+            anomalies=detect_run_anomalies(output),
+            output=output,
+        )
         if run_res.timed_out:
             msg = f"pipeline-timeout:{args.run_timeout_sec}s"
             failed.append((combo, msg))

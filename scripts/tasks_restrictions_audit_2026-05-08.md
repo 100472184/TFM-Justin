@@ -205,3 +205,24 @@ Updated `scripts/run_pending_models.py` hardcoded baseline:
    - `CVE-2022-24724_cmark-gfm` + `llama3-8b` + `L1`
 3. Left pending for rerun (not quarantined automatically):
    - `CVE-2022-24724_cmark-gfm` + `qwen2.5-7b` + `L1` (manual interruption, no quality verdict yet)
+
+### Follow-up 2026-05-10 (qwen L1 rerun)
+1. `CVE-2022-24724_cmark-gfm` + `qwen2.5-7b` + `L1` completed full `45/45` iterations with canonical destination renamed to:
+   - `runs/CVE-2022-24724_cmark-gfm/qwen2.5-7b/L1_CVE-2022-24724_cmark-gfm`
+2. Outcome remained negative (`success=false`, no vuln/fixed differential crash), but run is structurally usable (not partial).
+3. The only warning emitted was `seed-nul-rejected` from intermediate retries; this is expected noise for text-seed tasks when later retries still produce valid text seeds and reach VERIFY.
+4. Policy update:
+   - Marked `cmark-gfm/qwen2.5-7b/L1` as existing in baseline.
+   - Autoscript anomaly normalization now downgrades `seed-nul-rejected` for text tasks when the run reached VERIFY (to avoid false-positive staged warnings).
+
+### Follow-up 2026-05-10 (zstd llama L1 quarantine)
+1. `CVE-2022-4899_zstd` + `llama3-8b` + `L1` produced anomalous behavior in `ANALYZE`:
+   - parse/escape issues (`Invalid \\escape`),
+   - off-topic drift (summary referencing an unrelated CVE),
+   - explicit `LLM requested early stop` at iteration `38/45` (run ends before full planned budget).
+2. Operational decision:
+   - treat this run as **quarantine** (not a clean completion),
+   - exclude `zstd/llama3-8b/L1` from automatic rerun queue by hardcoded baseline entry.
+3. Queue hygiene:
+   - keep `cmark-gfm/qwen2.5-7b/L1` as completed/existing,
+   - keep `zstd/llama3-8b/L1` as quarantined until prompt/guardrails are tightened.
