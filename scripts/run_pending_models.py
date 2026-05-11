@@ -40,6 +40,16 @@ MODEL_SPECS = {
     "glm-5.1": "ollama/glm-5.1",
 }
 
+# Execution priority for multi-model batches.
+# Heavier models first so we can front-load likely stronger performers.
+# Any alias added to MODEL_SPECS but not listed here is appended at the end.
+MODEL_ORDER = [
+    "glm-5.1",
+    "gpt-oss-20b",
+    "gemma3-12b",
+    "ministral-3-8b",
+]
+
 LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
 RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
 STATE_FILE = ".run_pending_models_state.json"
@@ -1020,14 +1030,19 @@ def build_combos(
     else:
         unknown = []
 
-    models = [m for m in sorted(MODEL_SPECS.keys()) if not models_filter or m in models_filter]
+    ordered_models = [m for m in MODEL_ORDER if m in MODEL_SPECS]
+    ordered_models += [m for m in MODEL_SPECS.keys() if m not in ordered_models]
+    models = [m for m in ordered_models if not models_filter or m in models_filter]
     levels = [l for l in LEVEL_ORDER if not levels_filter or l in levels_filter]
 
-    # Global priority order: all L3 first, then all L2, then L1, then L0.
+    # Global priority order:
+    # 1) all L3 first, then L2, then L1, then L0
+    # 2) within each level, heavier models first
+    # 3) for each model, sweep all selected CVEs
     combos: list[Combo] = []
     for level in levels:
-        for cve in selected_cves:
-            for model_alias in models:
+        for model_alias in models:
+            for cve in selected_cves:
                 combos.append(
                     Combo(
                         cve=cve,
