@@ -371,3 +371,51 @@ class OpenHandsLLMClient:
                         f"Last error: {str(e)}\n"
                         f"Problematic content: {content[:500]}"
                     ) from e
+
+    def completion_text(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_retries: int = 1,
+        timeout_sec: Optional[int] = None,
+    ) -> str:
+        """
+        Get plain-text completion from LLM (used for markdown summaries).
+
+        Returns:
+            Raw text content from assistant message.
+        """
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        import litellm
+        import time
+
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    delay = min(2 ** attempt, 8)
+                    time.sleep(delay)
+
+                kwargs = dict(self.llm_kwargs)
+                if timeout_sec is not None and timeout_sec > 0:
+                    kwargs["timeout"] = int(timeout_sec)
+
+                response = litellm.completion(messages=messages, **kwargs)
+                content = response.choices[0].message.content
+                if content is None:
+                    content = ""
+                text = str(content).strip()
+                if text:
+                    return text
+                last_error = "empty response"
+            except Exception as e:
+                last_error = str(e)
+
+            if attempt >= max_retries:
+                break
+
+        raise RuntimeError(f"completion_text failed: {last_error}")

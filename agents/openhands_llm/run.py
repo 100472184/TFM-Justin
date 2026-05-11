@@ -15,12 +15,59 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
 
-from agents.openhands_llm.src.pipeline import run_pipeline
-from agents.openhands_llm.src.io_utils import write_text, now_run_id
+from agents.openhands_llm.src.pipeline import (
+    run_pipeline,
+    model_to_dirname,
+    _render_partial_console_summary,
+    _build_run_summary_prompt,
+    _sanitize_markdown_from_llm,
+)
+from agents.openhands_llm.src.openhands_client import OpenHandsLLMClient
+
+
+def _latest_run_dir(repo_root: Path, task_id: str, effective_model: str) -> Path | None:
+    model_dir = model_to_dirname(effective_model)
+    parent = repo_root / "runs" / task_id / model_dir
+    if not parent.is_dir():
+        return None
+    candidates = [p for p in parent.iterdir() if p.is_dir()]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0]
+
+
+def _load_verify_history_from_run(run_dir: Path) -> list[dict]:
+    out: list[dict] = []
+    iter_dirs = sorted([p for p in run_dir.iterdir() if p.is_dir() and p.name.startswith("iter_")])
+    for idir in iter_dirs:
+        verify = idir / "verify.json"
+        if not verify.is_file():
+            continue
+        try:
+            data = json.loads(verify.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        try:
+            it = int(idir.name.split("_")[1])
+        except Exception:
+            it = len(out) + 1
+        out.append(
+            {
+                "iteration": it,
+                "success": bool(data.get("success", False)),
+                "notes": data.get("notes", "N/A"),
+                "vuln_exit_code": data.get("vuln_exit_code"),
+                "fixed_exit_code": data.get("fixed_exit_code"),
+                "mutation_success": bool(data.get("mutation_applied", False)),
+            }
+        )
+    return out
 
 
 def main():
@@ -72,6 +119,26 @@ def main():
             "(equivalent to docker kill $(docker ps -q)). Disabled by default."
         ),
     )
+    parser.add_argument(
+        "--no-llm-summary",
+        action="store_true",
+        help="Disable LLM-generated markdown summaries and always use template reports.",
+    )
+    parser.add_argument(
+        "--summary-llm-model",
+        type=str,
+        default=None,
+        help=(
+            "Optional model for iteration/run summaries (e.g., ollama/ministral-3:8b). "
+            "If omitted, SUMMARY_LLM_MODEL env var is used."
+        ),
+    )
+    parser.add_argument(
+        "--summary-llm-timeout-sec",
+        type=int,
+        default=45,
+        help="Timeout for each summary LLM call in seconds (default: 45).",
+    )
 
     args = parser.parse_args()
 
@@ -105,6 +172,9 @@ def main():
             service=args.service,
             model=args.model,
             kill_running_containers_after_iter=args.kill_running_containers_after_iter,
+            summary_llm_enabled=not args.no_llm_summary,
+            summary_llm_model=args.summary_llm_model,
+            summary_llm_timeout_sec=args.summary_llm_timeout_sec,
         )
 
         print(f"\n{'='*70}")
@@ -123,6 +193,47 @@ def main():
 
     except KeyboardInterrupt:
         print("\n\n⚠️  Pipeline interrupted by user")
+        latest = _latest_run_dir(repo_root, args.task_id, effective_model)
+        if latest:
+            verify_history = _load_verify_history_from_run(latest)
+            if not args.no_llm_summary:
+                summary_model = (args.summary_llm_model or os.getenv("SUMMARY_LLM_MODEL", "")).strip()
+                if summary_model:
+                    try:
+                        sum_llm = OpenHandsLLMClient(model=summary_model)
+                        prompt = _build_run_summary_prompt(
+                            task_id=args.task_id,
+                            level=args.level,
+                            model=effective_model,
+                            max_iters=args.max_iters,
+                            run_dir=latest,
+                            verify_history=verify_history,
+                            success=False,
+                        )
+                        raw = sum_llm.completion_text(
+                            system_prompt="You are a precise incident reporter for security fuzzing campaigns.",
+                            user_prompt=prompt,
+                            max_retries=1,
+                            timeout_sec=args.summary_llm_timeout_sec,
+                        )
+                        md = _sanitize_markdown_from_llm(raw, "# Partial Run Report")
+                        if md:
+                            print(md)
+                            return 130
+                    except Exception as e:
+                        print(f"Summary LLM unavailable, using template fallback: {type(e).__name__}: {e}")
+            partial = _render_partial_console_summary(
+                task_id=args.task_id,
+                level=args.level,
+                model=effective_model,
+                max_iters=args.max_iters,
+                run_dir=latest,
+                verify_history=verify_history,
+            )
+            print(partial)
+        else:
+            print("Pensando en resumen hasta ahora...")
+            print("Aun no hay iteraciones suficientes para resumir.")
         return 130
     except Exception as e:
         print(f"\n\n❌ Pipeline failed with error:")

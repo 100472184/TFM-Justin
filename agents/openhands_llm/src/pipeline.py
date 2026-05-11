@@ -26,6 +26,384 @@ from .mutations import apply_mutations
 from .openhands_client import OpenHandsLLMClient
 
 
+def _one_line(value: Any, max_len: int = 240) -> str:
+    if value is None:
+        return "N/A"
+    s = str(value).replace("\r", " ").replace("\n", " ").strip()
+    if not s:
+        return "N/A"
+    if len(s) <= max_len:
+        return s
+    return s[:max_len] + "..."
+
+
+def _build_iteration_report_md(
+    *,
+    task_id: str,
+    level: str,
+    model: str,
+    iteration: int,
+    max_iters: int,
+    analysis_summary: str,
+    generate_attempts: int,
+    failed_attempts: list[dict[str, Any]],
+    mutation_success: bool,
+    mutations_applied_count: int,
+    mutation_error: str | None,
+    seed_extension: str,
+    verify_result: dict[str, Any] | None,
+) -> str:
+    verify_result = verify_result or {}
+    success = bool(verify_result.get("success", False))
+    notes = _one_line(verify_result.get("notes", "N/A"), 320)
+    vuln_exit = verify_result.get("vuln_exit_code", "N/A")
+    fixed_exit = verify_result.get("fixed_exit_code", "N/A")
+    vuln_crash = verify_result.get("vuln_crashes", False)
+    fixed_crash = verify_result.get("fixed_crashes", False)
+
+    last_failed_error = "N/A"
+    if failed_attempts:
+        last_failed_error = _one_line(failed_attempts[-1].get("error", "N/A"), 320)
+
+    lines = [
+        f"# Iteration {iteration:03d} Report",
+        "",
+        f"- Task: `{task_id}`",
+        f"- Level: `{level}`",
+        f"- Model: `{model}`",
+        f"- Iteration: `{iteration}/{max_iters}`",
+        f"- Seed Type: `{seed_extension}`",
+        "",
+        "## Analyze",
+        f"- Summary: {_one_line(analysis_summary, 500)}",
+        "",
+        "## Generate",
+        f"- Mutation success: `{mutation_success}`",
+        f"- Mutations applied: `{mutations_applied_count}`",
+        f"- Generate attempts: `{generate_attempts}`",
+        f"- Failed attempts: `{len(failed_attempts)}`",
+        f"- Last generation error: `{last_failed_error}`",
+        f"- Mutation error (final): `{_one_line(mutation_error, 320)}`",
+        "",
+        "## Verify",
+        f"- Success: `{success}`",
+        f"- Vulnerable: `exit={vuln_exit}` `crashes={vuln_crash}`",
+        f"- Fixed: `exit={fixed_exit}` `crashes={fixed_crash}`",
+        f"- Notes: {notes}",
+        "",
+        "## Artifacts",
+        "- `analysis.json`",
+        "- `generate.json`",
+        "- `verify.json`",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _build_run_report_md(
+    *,
+    task_id: str,
+    level: str,
+    model: str,
+    max_iters: int,
+    run_dir: Path,
+    verify_history: list[dict[str, Any]],
+    success: bool,
+) -> str:
+    total = len(verify_history)
+    success_iter = next((h.get("iteration") for h in verify_history if h.get("success")), None)
+    success_count = sum(1 for h in verify_history if h.get("success"))
+    mutation_fail_count = sum(
+        1 for h in verify_history if not h.get("mutation_success", True) and not h.get("success", False)
+    )
+
+    lines = [
+        "# Run Report",
+        "",
+        f"- Task: `{task_id}`",
+        f"- Level: `{level}`",
+        f"- Model: `{model}`",
+        f"- Max iterations configured: `{max_iters}`",
+        f"- Iterations executed: `{total}`",
+        f"- Run success: `{success}`",
+        f"- Success iteration: `{success_iter if success_iter is not None else 'N/A'}`",
+        f"- Successful verify count: `{success_count}`",
+        f"- Mutation-failed iterations: `{mutation_fail_count}`",
+        f"- Run directory: `{run_dir}`",
+        "",
+        "## Iteration Timeline",
+    ]
+
+    if not verify_history:
+        lines.append("- No completed iterations were recorded.")
+    else:
+        for h in verify_history:
+            it = h.get("iteration", "N/A")
+            ok = h.get("success", False)
+            vuln_code = h.get("vuln_exit_code", "N/A")
+            fixed_code = h.get("fixed_exit_code", "N/A")
+            note = _one_line(h.get("notes", "N/A"), 220)
+            lines.append(
+                f"- Iter {it:03d}: success={ok}, vuln_exit={vuln_code}, fixed_exit={fixed_code}, note={note}"
+            )
+
+    lines += [
+        "",
+        "## Notes",
+        "- Detailed per-iteration summaries are stored in each `iter_XXX/iteration_report.md`.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _render_partial_console_summary(
+    *,
+    task_id: str,
+    level: str,
+    model: str,
+    max_iters: int,
+    run_dir: Path,
+    verify_history: list[dict[str, Any]],
+) -> str:
+    total = len(verify_history)
+    success_iter = next((h.get("iteration") for h in verify_history if h.get("success")), None)
+    lines = [
+        "Pensando en resumen hasta ahora...",
+        f"- Task: {task_id}",
+        f"- Level: {level}",
+        f"- Model: {model}",
+        f"- Iteraciones completadas: {total}/{max_iters}",
+        f"- Iteracion de exito (si existe): {success_iter if success_iter is not None else 'N/A'}",
+        f"- Run dir: {run_dir}",
+    ]
+    if verify_history:
+        last = verify_history[-1]
+        lines.append(
+            f"- Ultima iteracion: {last.get('iteration')} | success={last.get('success')} | note={_one_line(last.get('notes', 'N/A'), 180)}"
+        )
+    else:
+        lines.append("- Aun no hay iteraciones completadas con verify_history.")
+    return "\n".join(lines)
+
+
+def _sanitize_markdown_from_llm(raw_text: str, default_title: str) -> str:
+    text = (raw_text or "").strip()
+    if not text:
+        return ""
+
+    # Remove markdown fences if model wrapped the whole answer.
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text, count=1)
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+
+    if not text.lstrip().startswith("#"):
+        text = f"{default_title}\n\n{text}"
+    return text.strip() + "\n"
+
+
+def _build_iteration_summary_prompt(
+    *,
+    task_id: str,
+    level: str,
+    model: str,
+    iteration: int,
+    max_iters: int,
+    analysis_summary: str,
+    generate_attempts: int,
+    failed_attempts: list[dict[str, Any]],
+    mutation_success: bool,
+    mutations_applied_count: int,
+    mutation_error: str | None,
+    seed_extension: str,
+    verify_result: dict[str, Any] | None,
+) -> str:
+    payload = {
+        "task_id": task_id,
+        "level": level,
+        "model": model,
+        "iteration": iteration,
+        "max_iters": max_iters,
+        "analysis_summary": _one_line(analysis_summary, 700),
+        "generate_attempts": generate_attempts,
+        "failed_attempts_count": len(failed_attempts),
+        "last_failed_error": _one_line(failed_attempts[-1].get("error"), 450) if failed_attempts else "N/A",
+        "mutation_success": mutation_success,
+        "mutations_applied_count": mutations_applied_count,
+        "mutation_error": _one_line(mutation_error, 450),
+        "seed_extension": seed_extension,
+        "verify_result": verify_result or {},
+    }
+    return (
+        "Create a concise technical markdown report for a single fuzzing iteration.\n"
+        "Use exactly these sections: Summary, Analyze, Generate, Verify, Risk Flags.\n"
+        "Rules:\n"
+        "- Keep it factual, no invented data.\n"
+        "- Mention concrete errors/timeouts if present.\n"
+        "- Max 220 words.\n"
+        "- Output ONLY markdown.\n\n"
+        f"DATA:\n{json.dumps(payload, indent=2, ensure_ascii=False)}"
+    )
+
+
+def _build_run_summary_prompt(
+    *,
+    task_id: str,
+    level: str,
+    model: str,
+    max_iters: int,
+    run_dir: Path,
+    verify_history: list[dict[str, Any]],
+    success: bool,
+) -> str:
+    payload = {
+        "task_id": task_id,
+        "level": level,
+        "model": model,
+        "max_iters": max_iters,
+        "run_dir": str(run_dir),
+        "success": success,
+        "iterations_executed": len(verify_history),
+        "timeline": [
+            {
+                "iteration": h.get("iteration"),
+                "success": h.get("success"),
+                "vuln_exit_code": h.get("vuln_exit_code"),
+                "fixed_exit_code": h.get("fixed_exit_code"),
+                "mutation_success": h.get("mutation_success"),
+                "note": _one_line(h.get("notes"), 240),
+            }
+            for h in verify_history
+        ],
+    }
+    return (
+        "Create a concise technical markdown run report for a fuzzing campaign.\n"
+        "Use exactly these sections: Executive Summary, Key Failures, Key Successes, Next Actions.\n"
+        "Rules:\n"
+        "- Do not invent data.\n"
+        "- Highlight recurring failure patterns.\n"
+        "- Mention if run succeeded and in which iteration when available.\n"
+        "- Max 320 words.\n"
+        "- Output ONLY markdown.\n\n"
+        f"DATA:\n{json.dumps(payload, indent=2, ensure_ascii=False)}"
+    )
+
+
+def _select_iteration_report_markdown(
+    *,
+    summary_llm: OpenHandsLLMClient | None,
+    summary_llm_timeout_sec: int,
+    task_id: str,
+    level: str,
+    model: str,
+    iteration: int,
+    max_iters: int,
+    analysis_summary: str,
+    generate_attempts: int,
+    failed_attempts: list[dict[str, Any]],
+    mutation_success: bool,
+    mutations_applied_count: int,
+    mutation_error: str | None,
+    seed_extension: str,
+    verify_result: dict[str, Any] | None,
+) -> tuple[str, str, str]:
+    fallback_md = _build_iteration_report_md(
+        task_id=task_id,
+        level=level,
+        model=model,
+        iteration=iteration,
+        max_iters=max_iters,
+        analysis_summary=analysis_summary,
+        generate_attempts=generate_attempts,
+        failed_attempts=failed_attempts,
+        mutation_success=mutation_success,
+        mutations_applied_count=mutations_applied_count,
+        mutation_error=mutation_error,
+        seed_extension=seed_extension,
+        verify_result=verify_result,
+    )
+
+    if summary_llm is None:
+        return fallback_md, "template", "summary-llm-disabled"
+
+    prompt = _build_iteration_summary_prompt(
+        task_id=task_id,
+        level=level,
+        model=model,
+        iteration=iteration,
+        max_iters=max_iters,
+        analysis_summary=analysis_summary,
+        generate_attempts=generate_attempts,
+        failed_attempts=failed_attempts,
+        mutation_success=mutation_success,
+        mutations_applied_count=mutations_applied_count,
+        mutation_error=mutation_error,
+        seed_extension=seed_extension,
+        verify_result=verify_result,
+    )
+
+    try:
+        llm_text = summary_llm.completion_text(
+            system_prompt="You are a precise incident reporter for security fuzzing runs.",
+            user_prompt=prompt,
+            max_retries=1,
+            timeout_sec=summary_llm_timeout_sec,
+        )
+        md = _sanitize_markdown_from_llm(llm_text, f"# Iteration {iteration:03d} Report")
+        if md:
+            return md, "llm", ""
+        return fallback_md, "template", "summary-llm-empty"
+    except Exception as e:
+        return fallback_md, "template", f"summary-llm-error:{_one_line(e, 260)}"
+
+
+def _select_run_report_markdown(
+    *,
+    summary_llm: OpenHandsLLMClient | None,
+    summary_llm_timeout_sec: int,
+    task_id: str,
+    level: str,
+    model: str,
+    max_iters: int,
+    run_dir: Path,
+    verify_history: list[dict[str, Any]],
+    success: bool,
+) -> tuple[str, str, str]:
+    fallback_md = _build_run_report_md(
+        task_id=task_id,
+        level=level,
+        model=model,
+        max_iters=max_iters,
+        run_dir=run_dir,
+        verify_history=verify_history,
+        success=success,
+    )
+
+    if summary_llm is None:
+        return fallback_md, "template", "summary-llm-disabled"
+
+    prompt = _build_run_summary_prompt(
+        task_id=task_id,
+        level=level,
+        model=model,
+        max_iters=max_iters,
+        run_dir=run_dir,
+        verify_history=verify_history,
+        success=success,
+    )
+    try:
+        llm_text = summary_llm.completion_text(
+            system_prompt="You are a precise incident reporter for security fuzzing campaigns.",
+            user_prompt=prompt,
+            max_retries=1,
+            timeout_sec=summary_llm_timeout_sec,
+        )
+        md = _sanitize_markdown_from_llm(llm_text, "# Run Report")
+        if md:
+            return md, "llm", ""
+        return fallback_md, "template", "summary-llm-empty"
+    except Exception as e:
+        return fallback_md, "template", f"summary-llm-error:{_one_line(e, 260)}"
+
+
 def run_benchmark(
     repo_root: Path,
     task_id: str,
@@ -331,7 +709,10 @@ def run_pipeline(
     service: str = "target-vuln",
     model: str = None,
     extra_args: List[str] = None,
-    kill_running_containers_after_iter: bool = False
+    kill_running_containers_after_iter: bool = False,
+    summary_llm_enabled: bool = True,
+    summary_llm_model: str | None = None,
+    summary_llm_timeout_sec: int = 45,
 ) -> Dict[str, Any]:
     """
     Run the complete ANALYZE → GENERATE → VERIFY pipeline.
@@ -341,6 +722,14 @@ def run_pipeline(
                Falls back to LLM_MODEL env var, then vertex_ai/gemini-2.0-flash-001.
         kill_running_containers_after_iter:
                If True, kill all running Docker containers after each iteration.
+        summary_llm_enabled:
+               If True, attempts to generate markdown reports using an LLM.
+               Falls back to deterministic template if unavailable/failing.
+        summary_llm_model:
+               Optional model for summaries. If omitted, uses SUMMARY_LLM_MODEL env var.
+               If still missing, summary LLM is disabled and template reports are used.
+        summary_llm_timeout_sec:
+               Timeout for each summary LLM call.
     
     Returns:
         Dict with keys: success (bool), iteration (int), run_dir (Path)
@@ -379,6 +768,20 @@ def run_pipeline(
     # Initialize LLM client (pass model override)
     print("Initializing LLM client...")
     llm = OpenHandsLLMClient(model=model)
+    summary_llm: OpenHandsLLMClient | None = None
+    summary_llm_status = "disabled"
+    if summary_llm_enabled:
+        summary_model = summary_llm_model or os.getenv("SUMMARY_LLM_MODEL", "").strip()
+        if summary_model:
+            try:
+                summary_llm = OpenHandsLLMClient(model=summary_model)
+                summary_llm_status = f"enabled:{summary_model}"
+            except Exception as e:
+                summary_llm = None
+                summary_llm_status = f"fallback-template:{_one_line(e, 180)}"
+        else:
+            summary_llm_status = "fallback-template:SUMMARY_LLM_MODEL-not-set"
+    print(f"Summary LLM:  {summary_llm_status}")
     
     # Initialize variables
     base_seed = None
@@ -451,6 +854,7 @@ def run_pipeline(
     
     # History for prompts
     verify_history = []
+    last_iteration = 0
     
     # Store original base seed for fresh start each iteration
     # This prevents corruption from propagating between iterations
@@ -506,8 +910,9 @@ def run_pipeline(
     print("\n  ✓ Docker initialization complete - images ready for testing")
     
     success = False
-    
+
     for iteration in range(1, max_iters + 1):
+        last_iteration = iteration
         print(f"\n{'='*60}")
         print(f"ITERATION {iteration}/{max_iters}")
         print(f"{'='*60}")
@@ -645,6 +1050,36 @@ def run_pipeline(
                 "vuln_stderr_preview": "",
                 "fixed_stderr_preview": ""
             })
+
+            iter_report, iter_report_source, iter_report_note = _select_iteration_report_markdown(
+                summary_llm=summary_llm,
+                summary_llm_timeout_sec=summary_llm_timeout_sec,
+                task_id=task_id,
+                level=level,
+                model=model,
+                iteration=iteration,
+                max_iters=max_iters,
+                analysis_summary=notes,
+                generate_attempts=0,
+                failed_attempts=[],
+                mutation_success=False,
+                mutations_applied_count=0,
+                mutation_error="ANALYZE failed",
+                seed_extension=seed_extension,
+                verify_result=verify_result,
+            )
+            write_text(iter_dir / "iteration_report.md", iter_report)
+            write_text(
+                iter_dir / "iteration_report_meta.json",
+                json.dumps(
+                    {
+                        "source": iter_report_source,
+                        "note": iter_report_note,
+                        "summary_llm_model": summary_llm.model if summary_llm else None,
+                    },
+                    indent=2,
+                ),
+            )
             
             if kill_running_containers_after_iter:
                 kill_all_running_containers_after_iteration(iteration)
@@ -668,6 +1103,66 @@ def run_pipeline(
         # Check for early stop
         if stop_early:
             print("  LLM requested early stop")
+            notes = "LLM requested early stop"
+            verify_result = {
+                "vuln_exit_code": None,
+                "vuln_stdout": "",
+                "vuln_stderr": "",
+                "vuln_crashes": False,
+                "fixed_exit_code": None,
+                "fixed_stdout": "",
+                "fixed_stderr": "",
+                "fixed_crashes": False,
+                "success": False,
+                "notes": notes,
+                "mutation_applied": False,
+                "mutation_error": notes
+            }
+            write_text(iter_dir / "verify.json", json.dumps(verify_result, indent=2))
+            verify_history.append({
+                "iteration": iteration,
+                "vuln_crashes": False,
+                "fixed_crashes": False,
+                "vuln_exit_code": None,
+                "fixed_exit_code": None,
+                "success": False,
+                "notes": notes,
+                "mutations_applied": [],
+                "failed_attempts": [],
+                "mutation_success": False,
+                "mutation_error": notes,
+                "vuln_stderr_preview": "",
+                "fixed_stderr_preview": ""
+            })
+            iter_report, iter_report_source, iter_report_note = _select_iteration_report_markdown(
+                summary_llm=summary_llm,
+                summary_llm_timeout_sec=summary_llm_timeout_sec,
+                task_id=task_id,
+                level=level,
+                model=model,
+                iteration=iteration,
+                max_iters=max_iters,
+                analysis_summary=analysis_summary,
+                generate_attempts=0,
+                failed_attempts=[],
+                mutation_success=False,
+                mutations_applied_count=0,
+                mutation_error=notes,
+                seed_extension=seed_extension,
+                verify_result=verify_result,
+            )
+            write_text(iter_dir / "iteration_report.md", iter_report)
+            write_text(
+                iter_dir / "iteration_report_meta.json",
+                json.dumps(
+                    {
+                        "source": iter_report_source,
+                        "note": iter_report_note,
+                        "summary_llm_model": summary_llm.model if summary_llm else None,
+                    },
+                    indent=2,
+                ),
+            )
             if kill_running_containers_after_iter:
                 kill_all_running_containers_after_iteration(iteration)
             break
@@ -687,6 +1182,7 @@ def run_pipeline(
         failed_attempts = []
         new_seed = None
         mutations = None
+        generation: Any = {}
         mutation_success = False
         mutation_error = None
         
@@ -863,6 +1359,36 @@ def run_pipeline(
                 "vuln_stderr_preview": "",
                 "fixed_stderr_preview": ""
             })
+
+            iter_report, iter_report_source, iter_report_note = _select_iteration_report_markdown(
+                summary_llm=summary_llm,
+                summary_llm_timeout_sec=summary_llm_timeout_sec,
+                task_id=task_id,
+                level=level,
+                model=model,
+                iteration=iteration,
+                max_iters=max_iters,
+                analysis_summary=analysis_summary,
+                generate_attempts=max_generate_attempts,
+                failed_attempts=failed_attempts,
+                mutation_success=False,
+                mutations_applied_count=len(mutations) if mutations else 0,
+                mutation_error=mutation_error,
+                seed_extension=seed_extension,
+                verify_result=verify_result,
+            )
+            write_text(iter_dir / "iteration_report.md", iter_report)
+            write_text(
+                iter_dir / "iteration_report_meta.json",
+                json.dumps(
+                    {
+                        "source": iter_report_source,
+                        "note": iter_report_note,
+                        "summary_llm_model": summary_llm.model if summary_llm else None,
+                    },
+                    indent=2,
+                ),
+            )
             
             # Skip VERIFY phase and continue to next iteration
             if kill_running_containers_after_iter:
@@ -1057,6 +1583,36 @@ def run_pipeline(
             "vuln_stderr_preview": safe_truncate(verify_result["vuln_stderr"], 500),
             "fixed_stderr_preview": safe_truncate(verify_result["fixed_stderr"], 500)
         })
+
+        iter_report, iter_report_source, iter_report_note = _select_iteration_report_markdown(
+            summary_llm=summary_llm,
+            summary_llm_timeout_sec=summary_llm_timeout_sec,
+            task_id=task_id,
+            level=level,
+            model=model,
+            iteration=iteration,
+            max_iters=max_iters,
+            analysis_summary=analysis_summary,
+            generate_attempts=generation_result.get("total_attempts", 1),
+            failed_attempts=failed_attempts,
+            mutation_success=True,
+            mutations_applied_count=len(mutations) if mutations else 0,
+            mutation_error=mutation_error,
+            seed_extension=seed_extension,
+            verify_result=verify_result,
+        )
+        write_text(iter_dir / "iteration_report.md", iter_report)
+        write_text(
+            iter_dir / "iteration_report_meta.json",
+            json.dumps(
+                {
+                    "source": iter_report_source,
+                    "note": iter_report_note,
+                    "summary_llm_model": summary_llm.model if summary_llm else None,
+                },
+                indent=2,
+            ),
+        )
         
         # Check success - now based on CVE-specific crash
         if verify_result["success"]:
@@ -1078,12 +1634,38 @@ def run_pipeline(
         "max_iters": max_iters,
         "total_iters": len(verify_history),
         "success": success,
-        "success_iter": iteration if success else None,
+        "success_iter": last_iteration if success else None,
         "run_dir": str(run_dir),
+        "summary_llm_status": summary_llm_status,
         "timestamp": run_id
     }
     
     write_text(run_dir / "summary.json", json.dumps(summary, indent=2))
+    run_report, run_report_source, run_report_note = _select_run_report_markdown(
+        summary_llm=summary_llm,
+        summary_llm_timeout_sec=summary_llm_timeout_sec,
+        task_id=task_id,
+        level=level,
+        model=model,
+        max_iters=max_iters,
+        run_dir=run_dir,
+        verify_history=verify_history,
+        success=success,
+    )
+    write_text(run_dir / "run_report.md", run_report)
+    write_text(
+        run_dir / "run_report_meta.json",
+        json.dumps(
+            {
+                "source": run_report_source,
+                "note": run_report_note,
+                "summary_llm_model": summary_llm.model if summary_llm else None,
+            },
+            indent=2,
+        ),
+    )
+    print("\n--- Run Report ---")
+    print(run_report)
     
     print(f"\n{'='*60}")
     print(f"Run complete: {run_dir}")
@@ -1092,6 +1674,6 @@ def run_pipeline(
     
     return {
         "success": success,
-        "iteration": iteration,
+        "iteration": last_iteration,
         "run_dir": str(run_dir)
     }

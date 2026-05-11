@@ -35,7 +35,7 @@ LEVEL_ITERS = {
 #   the current API key/account to avoid schedule-time hard failures.
 MODEL_SPECS = {
     "ministral-3-8b": "ollama/ministral-3:8b",
-    "gemma3-12b": "ollama/gemma3:12b",
+    "qwen3-coder-next": "ollama/qwen3-coder-next",
     "gpt-oss-20b": "ollama/gpt-oss:20b",
     "glm-5.1": "ollama/glm-5.1",
 }
@@ -45,8 +45,8 @@ MODEL_SPECS = {
 # Any alias added to MODEL_SPECS but not listed here is appended at the end.
 MODEL_ORDER = [
     "glm-5.1",
+    "qwen3-coder-next",
     "gpt-oss-20b",
-    "gemma3-12b",
     "ministral-3-8b",
 ]
 
