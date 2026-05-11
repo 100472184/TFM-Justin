@@ -90,6 +90,10 @@ LOCKED_BASE_SEEDS: dict[str, dict[str, str]] = {
 # Baseline hardcodeada a partir del estado analizado previamente.
 # Se usa para no depender de tener runs sincronizado en Kali.
 HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
+    # New cloud campaign (2026-05-11+)
+    # Marked as completed/valid and should not be rescheduled automatically.
+    ("CVE-2014-2525_libyaml", "glm-5.1", "L3"),
+
     ("CVE-2014-2525_libyaml", "llama3-8b", "L1"),
     ("CVE-2014-2525_libyaml", "llama3-8b", "L2"),
     ("CVE-2014-2525_libyaml", "llama3-8b", "L3"),
@@ -101,21 +105,6 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L1"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L2"),
     ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L3"),
-    # Exclusion deliberada: CVE-2016-5314_libtiff
-    # Ver runs/CVE-2016-5314_libtiff/reproduction_analysis.md
-    # (repro no fiable en el setup actual; se evita seguir consumiendo runs).
-    ("CVE-2016-5314_libtiff", "llama3-8b", "L3"),
-    ("CVE-2016-5314_libtiff", "mistral-7b", "L3"),
-    ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L3"),
-    ("CVE-2016-5314_libtiff", "llama3-8b", "L2"),
-    ("CVE-2016-5314_libtiff", "mistral-7b", "L2"),
-    ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L2"),
-    ("CVE-2016-5314_libtiff", "llama3-8b", "L1"),
-    ("CVE-2016-5314_libtiff", "mistral-7b", "L1"),
-    ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L1"),
-    ("CVE-2016-5314_libtiff", "llama3-8b", "L0"),
-    ("CVE-2016-5314_libtiff", "mistral-7b", "L0"),
-    ("CVE-2016-5314_libtiff", "qwen2.5-7b", "L0"),
     ("CVE-2016-9827_libming", "llama3-8b", "L3"),
     ("CVE-2016-9827_libming", "mistral-7b", "L3"),
     ("CVE-2016-9827_libming", "qwen2.5-7b", "L3"),
@@ -188,6 +177,14 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     # Marcadas como completadas/staged por ejecucion manual validada.
     ("CVE-2025-49014_jq", "llama3-8b", "L2"),
     ("CVE-2025-49014_jq", "qwen2.5-7b", "L2"),
+}
+
+# Exclusions that must never be scheduled by the automatic batch, regardless
+# of model alias or level.
+EXCLUDED_CVES: dict[str, str] = {
+    # Reproduction is not reliable in the current setup/harness architecture.
+    # See: runs/CVE-2016-5314_libtiff/reproduction_analysis.md
+    "CVE-2016-5314_libtiff": "excluded-policy:reproduction-unreliable",
 }
 
 
@@ -713,6 +710,29 @@ def combo_in_hardcoded_baseline(combo: Combo) -> bool:
     return (combo.cve, combo.model_alias, combo.level) in HARDCODED_EXISTING_COMBOS
 
 
+def hardcoded_baseline_alignment_stats() -> tuple[int, int]:
+    """
+    Return (aligned, legacy) counts for hardcoded baseline entries against
+    currently active model aliases.
+    """
+    active_aliases = set(MODEL_SPECS.keys())
+    aligned = 0
+    legacy = 0
+    for _, model_alias, _ in HARDCODED_EXISTING_COMBOS:
+        if model_alias in active_aliases:
+            aligned += 1
+        else:
+            legacy += 1
+    return aligned, legacy
+
+
+def combo_is_policy_excluded(combo: Combo) -> tuple[bool, str]:
+    reason = EXCLUDED_CVES.get(combo.cve)
+    if reason:
+        return True, reason
+    return False, ""
+
+
 def classify_pipeline_failure(output: str) -> str | None:
     """
     Classify known pipeline failures from stdout/stderr text.
@@ -1079,6 +1099,13 @@ def main() -> int:
     else:
         log(f"INFO local-llm-env no encontrado ({LOCAL_ENV_FILENAME}); usando entorno del sistema")
 
+    hardcoded_aligned, hardcoded_legacy = hardcoded_baseline_alignment_stats()
+    if hardcoded_legacy:
+        log(
+            "WARNING baseline hardcoded contiene entradas con aliases legacy "
+            f"no activos (aligned={hardcoded_aligned}, legacy={hardcoded_legacy})"
+        )
+
     cves_filter = set(args.cve)
     models_filter = set(args.model)
     levels_filter = set(args.level)
@@ -1090,6 +1117,10 @@ def main() -> int:
     existing: list[tuple[Combo, str]] = []
     pending: list[Combo] = []
     for combo in combos:
+        excluded, excluded_reason = combo_is_policy_excluded(combo)
+        if excluded:
+            existing.append((combo, excluded_reason))
+            continue
         done, reason = find_existing_level_run(
             runs_root,
             combo.cve,
