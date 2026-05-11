@@ -700,6 +700,19 @@ def model_to_dirname(model_str: str) -> str:
     return name
 
 
+def paired_fixed_service(vuln_service: str) -> str:
+    """
+    Derive fixed service name from vulnerable service name.
+
+    Examples:
+      target-vuln         -> target-fixed
+      target-vuln-direct  -> target-fixed-direct
+    """
+    if vuln_service.startswith("target-vuln"):
+        return vuln_service.replace("target-vuln", "target-fixed", 1)
+    return "target-fixed"
+
+
 def run_pipeline(
     repo_root: Path,
     task_id: str,
@@ -1415,13 +1428,14 @@ def run_pipeline(
         # Sanitize: lowercase, replace invalid chars, limit length
         import re
         project_name = "cve_repro"
+        fixed_service = paired_fixed_service(service)
         
         # Test vulnerable and fixed (images already built and verified)
         print("  Testing vulnerable version...")
         verify_vuln = run_benchmark(repo_root, task_id, service, seed_file, project_name)
         
         print("  Testing fixed version...")
-        verify_fixed = run_benchmark(repo_root, task_id, "target-fixed", seed_file, project_name)
+        verify_fixed = run_benchmark(repo_root, task_id, fixed_service, seed_file, project_name)
         
         # Use oracle verdict for crash detection (same logic as scripts.bench evaluate)
         ver = verdict(verify_vuln, verify_fixed)
@@ -1500,9 +1514,9 @@ def run_pipeline(
                 print("  Repro-check: Confirming timeout differential (2x more)...")
 
                 repro_v1 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
-                repro_f1 = run_benchmark(repo_root, task_id, "target-fixed", seed_file, project_name)
+                repro_f1 = run_benchmark(repo_root, task_id, fixed_service, seed_file, project_name)
                 repro_v2 = run_benchmark(repo_root, task_id, service, seed_file, project_name)
-                repro_f2 = run_benchmark(repo_root, task_id, "target-fixed", seed_file, project_name)
+                repro_f2 = run_benchmark(repo_root, task_id, fixed_service, seed_file, project_name)
 
                 r1_match = (repro_v1.exit_code in vuln_codes) and (repro_f1.exit_code in fixed_codes)
                 r2_match = (repro_v2.exit_code in vuln_codes) and (repro_f2.exit_code in fixed_codes)
@@ -1561,8 +1575,8 @@ def run_pipeline(
         # Save command for reproducibility (reflects actual execution)
         compose_path = repo_root / "tasks" / task_id / "compose.yml"
         repro_header = f"# Run ID: {run_id}\n# Project: {project_name}\n# Iteration: {iteration}\n\n"
-        cmd_vuln = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never -v {seed_file.resolve()}:/input/seed.bin:ro target-vuln"
-        cmd_fixed = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never -v {seed_file.resolve()}:/input/seed.bin:ro target-fixed"
+        cmd_vuln = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never -v {seed_file.resolve()}:/input/seed.bin:ro {service}"
+        cmd_fixed = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never -v {seed_file.resolve()}:/input/seed.bin:ro {fixed_service}"
         cmd_eval = f"python -m scripts.bench evaluate {task_id} --seed {seed_file}"
         write_text(iter_dir / "command.txt", f"{repro_header}# Vulnerable version (exact command):\n{cmd_vuln}\n\n# Fixed version:\n{cmd_fixed}\n\n# Evaluate (simplified):\n{cmd_eval}")
         

@@ -24,10 +24,7 @@ from agents.openhands_llm.src.pipeline import (
     run_pipeline,
     model_to_dirname,
     _render_partial_console_summary,
-    _build_run_summary_prompt,
-    _sanitize_markdown_from_llm,
 )
-from agents.openhands_llm.src.openhands_client import OpenHandsLLMClient
 
 
 def _latest_run_dir(repo_root: Path, task_id: str, effective_model: str) -> Path | None:
@@ -205,32 +202,8 @@ def main():
         latest = _latest_run_dir(repo_root, args.task_id, effective_model)
         if latest:
             verify_history = _load_verify_history_from_run(latest)
-            if not args.no_llm_summary:
-                summary_model = (args.summary_llm_model or os.getenv("SUMMARY_LLM_MODEL", "")).strip()
-                if summary_model:
-                    try:
-                        sum_llm = OpenHandsLLMClient(model=summary_model)
-                        prompt = _build_run_summary_prompt(
-                            task_id=args.task_id,
-                            level=args.level,
-                            model=effective_model,
-                            max_iters=args.max_iters,
-                            run_dir=latest,
-                            verify_history=verify_history,
-                            success=False,
-                        )
-                        raw = sum_llm.completion_text(
-                            system_prompt="You are a precise incident reporter for security fuzzing campaigns.",
-                            user_prompt=prompt,
-                            max_retries=1,
-                            timeout_sec=args.summary_llm_timeout_sec,
-                        )
-                        md = _sanitize_markdown_from_llm(raw, "# Partial Run Report")
-                        if md:
-                            print(md)
-                            return 130
-                    except Exception as e:
-                        print(f"Summary LLM unavailable, using template fallback: {type(e).__name__}: {e}")
+            # Important: on Ctrl+C we avoid extra outbound LLM calls, so the user
+            # gets an immediate partial summary instead of waiting on network timeouts.
             partial = _render_partial_console_summary(
                 task_id=args.task_id,
                 level=args.level,

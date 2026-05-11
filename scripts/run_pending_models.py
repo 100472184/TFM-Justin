@@ -138,6 +138,16 @@ EXCLUDED_CVES: dict[str, str] = {
     "CVE-2016-5314_libtiff": "excluded-policy:reproduction-unreliable",
 }
 
+# Service overrides by (CVE, level). These are methodological controls where a
+# level intentionally targets a different harness/service.
+#
+# Source rationale:
+# - runs/CVE-2023-29469_libxml2/gemini-2.0-flash/justification_L2_vs_L3.md
+# - runs/proposal_approach.md
+SERVICE_OVERRIDES_BY_CVE_LEVEL: dict[tuple[str, str], str] = {
+    ("CVE-2023-29469_libxml2", "L3"): "target-vuln-direct",
+}
+
 
 @dataclass(frozen=True)
 class Combo:
@@ -689,6 +699,109 @@ def combo_in_hardcoded_baseline(combo: Combo) -> bool:
     return (combo.cve, combo.model_alias, combo.level) in HARDCODED_EXISTING_COMBOS
 
 
+def resolve_service_for_combo(combo: Combo) -> str:
+    return SERVICE_OVERRIDES_BY_CVE_LEVEL.get((combo.cve, combo.level), "target-vuln")
+
+
+def _extract_cve_from_parts(parts: tuple[str, ...] | list[str]) -> str | None:
+    for part in parts:
+        if part.startswith("CVE-"):
+            return part
+    return None
+
+
+def _paired_fixed_service_name(vuln_service: str) -> str:
+    if vuln_service.startswith("target-vuln"):
+        return vuln_service.replace("target-vuln", "target-fixed", 1)
+    return "target-fixed"
+
+
+def discover_markdown_policy_signals(repo_root: Path) -> tuple[list[str], list[str]]:
+    """
+    Return (service_overrides_detected, warnings) from known high-signal .md docs.
+    This does not auto-mutate policy; it only audits and reports consistency.
+    """
+    overrides_detected: list[str] = []
+    warnings: list[str] = []
+
+    # Detect direct-harness methodology notes.
+    for md in (repo_root / "runs").rglob("justification_L2_vs_L3.md"):
+        txt = _read_text_if_exists(md).lower()
+        if "target-vuln-direct" in txt:
+            cve = _extract_cve_from_parts(md.parts)
+            if cve:
+                key = (cve, "L3")
+                configured = SERVICE_OVERRIDES_BY_CVE_LEVEL.get(key)
+                if configured == "target-vuln-direct":
+                    overrides_detected.append(
+                        f"{cve} L3 -> target-vuln-direct (aligned:{md.relative_to(repo_root).as_posix()})"
+                    )
+                else:
+                    warnings.append(
+                        f"{cve} L3 mentions target-vuln-direct but policy differs/missing "
+                        f"(configured={configured!r}) at {md.relative_to(repo_root).as_posix()}"
+                    )
+
+    # Cross-check that configured service overrides are actually realizable with compose services.
+    for (cve, level), vuln_service in sorted(SERVICE_OVERRIDES_BY_CVE_LEVEL.items()):
+        compose = _read_text_if_exists(repo_root / "tasks" / cve / "compose.yml").lower()
+        if not compose:
+            warnings.append(
+                f"{cve} {level} override={vuln_service} but compose.yml is missing/unreadable."
+            )
+            continue
+        if f"{vuln_service}:" not in compose:
+            warnings.append(
+                f"{cve} {level} override={vuln_service} not found in compose.yml services."
+            )
+        fixed_service = _paired_fixed_service_name(vuln_service)
+        if f"{fixed_service}:" not in compose:
+            warnings.append(
+                f"{cve} {level} fixed pair service {fixed_service} not found in compose.yml."
+            )
+
+    # Detect explicit non-reproducible notes and verify exclusion policy alignment.
+    non_repro_markers = (
+        "no reproducido",
+        "not reproduc",
+        "reproduction is not reliable",
+        "cannot be reliably reproduced",
+        "cannot reproduce",
+        "no se pudo reproducir",
+        "failure to reproduce",
+        "failed to reproduce",
+        "persistent failure to reproduce",
+        "was not achieved",
+    )
+    for md in (repo_root / "runs").rglob("reproduction_analysis.md"):
+        txt = _read_text_if_exists(md).lower()
+        if any(marker in txt for marker in non_repro_markers):
+            cve = _extract_cve_from_parts(md.parts)
+            if not cve:
+                continue
+            configured_reason = EXCLUDED_CVES.get(cve, "")
+            if configured_reason:
+                overrides_detected.append(
+                    f"{cve} excluded (aligned:{configured_reason}; source:{md.relative_to(repo_root).as_posix()})"
+                )
+            else:
+                warnings.append(
+                    f"{cve} has non-repro note in {md.relative_to(repo_root).as_posix()} "
+                    "but is not in EXCLUDED_CVES."
+                )
+
+    # Detect oracle-broken notes (informational only; no hard exclusion by default).
+    for md in (repo_root / "tasks").rglob("ORACLE_BROKEN.md"):
+        cve = _extract_cve_from_parts(md.parts)
+        if cve:
+            warnings.append(
+                f"{cve} has ORACLE_BROKEN note ({md.relative_to(repo_root).as_posix()}); "
+                "review before large campaign scheduling."
+            )
+
+    return sorted(set(overrides_detected)), sorted(set(warnings))
+
+
 def hardcoded_baseline_alignment_stats() -> tuple[int, int]:
     """
     Return (aligned, legacy) counts for hardcoded baseline entries against
@@ -1080,6 +1193,12 @@ def main() -> int:
     else:
         log(f"INFO local-llm-env no encontrado ({LOCAL_ENV_FILENAME}); usando entorno del sistema")
 
+    md_overrides, md_warnings = discover_markdown_policy_signals(repo_root)
+    for msg in md_overrides:
+        log(f"INFO md-policy aligned: {msg}")
+    for msg in md_warnings:
+        log(f"WARNING md-policy: {msg}")
+
     hardcoded_aligned, hardcoded_legacy = hardcoded_baseline_alignment_stats()
     if hardcoded_legacy:
         log(
@@ -1158,13 +1277,16 @@ def main() -> int:
             log(f"DRY-RUN plan: run + rename -> {dest}")
             seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve, auto_generate=False)
             seed_fragment = f" --seed {seed_path}" if seed_path else ""
+            service = resolve_service_for_combo(combo)
             cmd = (
                 f"python -m agents.openhands_llm.run --task-id {combo.cve} --level {combo.level} "
                 f"--max-iters {combo.max_iters} --model {combo.model_spec} "
-                f"--kill-running-containers-after-iter{seed_fragment}"
+                f"--service {service} --kill-running-containers-after-iter{seed_fragment}"
             )
             log(f"DRY-RUN run-cmd: {cmd}")
             log(f"DRY-RUN seed-policy: {seed_reason}")
+            if service != "target-vuln":
+                log(f"DRY-RUN service-override: {combo.cve} {combo.level} -> {service}")
             _, sanitized = build_run_env(combo.model_spec, local_llm_env)
             if sanitized:
                 log(f"DRY-RUN env-sanitize: {','.join(sanitized)}")
@@ -1218,6 +1340,8 @@ def main() -> int:
             str(combo.max_iters),
             "--model",
             combo.model_spec,
+            "--service",
+            resolve_service_for_combo(combo),
             "--kill-running-containers-after-iter",
             "--seed",
             str(seed_path),
@@ -1226,6 +1350,9 @@ def main() -> int:
         if sanitized_env:
             log(f"INFO env sanitizado para {combo.model_spec}: {','.join(sanitized_env)}")
         log(f"INFO {seed_reason} para {combo.cve}")
+        service = resolve_service_for_combo(combo)
+        if service != "target-vuln":
+            log(f"INFO service-override: {combo.cve} {combo.level} -> {service}")
         update_combo_state(state, combo, "running", "launched")
         save_state(state_path, state)
         try:
