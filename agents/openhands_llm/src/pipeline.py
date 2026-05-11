@@ -713,6 +713,7 @@ def run_pipeline(
     summary_llm_enabled: bool = True,
     summary_llm_model: str | None = None,
     summary_llm_timeout_sec: int = 45,
+    allow_llm_early_stop: bool = False,
 ) -> Dict[str, Any]:
     """
     Run the complete ANALYZE → GENERATE → VERIFY pipeline.
@@ -730,6 +731,9 @@ def run_pipeline(
                If still missing, summary LLM is disabled and template reports are used.
         summary_llm_timeout_sec:
                Timeout for each summary LLM call.
+        allow_llm_early_stop:
+               If True, honors `stop_early=true` from ANALYZE and ends the run.
+               If False (default), ignores that hint and continues iterating.
     
     Returns:
         Dict with keys: success (bool), iteration (int), run_dir (Path)
@@ -1101,6 +1105,9 @@ def run_pipeline(
         print(f"  Summary: {analysis_summary[:100]}...")
         
         # Check for early stop
+        if stop_early and not allow_llm_early_stop:
+            print("  LLM requested early stop (ignored by policy; continuing)")
+            stop_early = False
         if stop_early:
             print("  LLM requested early stop")
             notes = "LLM requested early stop"

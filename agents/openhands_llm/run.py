@@ -139,6 +139,14 @@ def main():
         default=45,
         help="Timeout for each summary LLM call in seconds (default: 45).",
     )
+    parser.add_argument(
+        "--allow-llm-early-stop",
+        action="store_true",
+        help=(
+            "Honor stop_early=true hints returned by ANALYZE and end runs early. "
+            "Disabled by default to preserve full iteration coverage."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -175,6 +183,7 @@ def main():
             summary_llm_enabled=not args.no_llm_summary,
             summary_llm_model=args.summary_llm_model,
             summary_llm_timeout_sec=args.summary_llm_timeout_sec,
+            allow_llm_early_stop=args.allow_llm_early_stop,
         )
 
         print(f"\n{'='*70}")

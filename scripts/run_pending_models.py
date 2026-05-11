@@ -90,94 +90,45 @@ LOCKED_BASE_SEEDS: dict[str, dict[str, str]] = {
 # Baseline hardcodeada a partir del estado analizado previamente.
 # Se usa para no depender de tener runs sincronizado en Kali.
 HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
-    # New cloud campaign (2026-05-11+)
-    # Marked as completed/valid and should not be rescheduled automatically.
+    # New cloud campaign (2026-05-11+), validated runs.
+    # Marked as completed/valid and should not be rescheduled automatically
+    # even if runs/ is not fully synchronized on the executing host.
     ("CVE-2014-2525_libyaml", "glm-5.1", "L3"),
-
-    ("CVE-2014-2525_libyaml", "llama3-8b", "L1"),
-    ("CVE-2014-2525_libyaml", "llama3-8b", "L2"),
-    ("CVE-2014-2525_libyaml", "llama3-8b", "L3"),
-    ("CVE-2014-2525_libyaml", "llama3-8b", "L0"),
-    ("CVE-2014-2525_libyaml", "mistral-7b", "L1"),
-    ("CVE-2014-2525_libyaml", "mistral-7b", "L2"),
-    ("CVE-2014-2525_libyaml", "mistral-7b", "L3"),
-    ("CVE-2014-2525_libyaml", "mistral-7b", "L0"),
-    ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L1"),
-    ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L2"),
-    ("CVE-2014-2525_libyaml", "qwen2.5-7b", "L3"),
-    ("CVE-2016-9827_libming", "llama3-8b", "L3"),
-    ("CVE-2016-9827_libming", "mistral-7b", "L3"),
-    ("CVE-2016-9827_libming", "qwen2.5-7b", "L3"),
-    ("CVE-2016-9827_libming", "llama3-8b", "L2"),
-    ("CVE-2016-9827_libming", "mistral-7b", "L2"),
-    ("CVE-2016-9827_libming", "qwen2.5-7b", "L2"),
-    # L1 completadas y staged (2026-05-10).
-    ("CVE-2016-9827_libming", "llama3-8b", "L1"),
-    ("CVE-2016-9827_libming", "mistral-7b", "L1"),
-    ("CVE-2016-9827_libming", "qwen2.5-7b", "L1"),
-    ("CVE-2021-32292_jsonc", "llama3-8b", "L3"),
-    ("CVE-2021-32292_jsonc", "mistral-7b", "L3"),
-    ("CVE-2021-32292_jsonc", "qwen2.5-7b", "L3"),
-    ("CVE-2021-32292_jsonc", "llama3-8b", "L2"),
-    ("CVE-2021-32292_jsonc", "mistral-7b", "L2"),
-    ("CVE-2021-32292_jsonc", "qwen2.5-7b", "L2"),
-    # L1 completadas y staged (2026-05-10).
-    ("CVE-2021-32292_jsonc", "llama3-8b", "L1"),
-    ("CVE-2021-32292_jsonc", "qwen2.5-7b", "L1"),
-    # Cuarentena L1 por artefacto parcial/anomalo (run-dir-partial, summary-missing-or-invalid).
-    ("CVE-2021-32292_jsonc", "mistral-7b", "L1"),
-    ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L3"),
-    ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L3"),
-    ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L3"),
-    ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L2"),
-    # Cuarentena L1 por anomalia de semilla (seed-nul-rejected) en task de texto.
-    ("CVE-2022-24724_cmark-gfm", "llama3-8b", "L1"),
-    # L1 completada posteriormente (2026-05-10) tras rerun completo.
-    ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L1"),
-    # Exclusion deliberada: cmark-gfm con mistral deriva fuera de dominio (.md)
-    ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L2"),
-    ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L1"),
-    ("CVE-2022-24724_cmark-gfm", "mistral-7b", "L0"),
-    # Cuarentena: posible desalineacion seed/harness en L2 para qwen
-    ("CVE-2022-24724_cmark-gfm", "qwen2.5-7b", "L2"),
-    ("CVE-2022-4899_zstd", "llama3-8b", "L3"),
-    # Cuarentena: comportamiento inconsistente en L2 (seed/path semantics)
-    ("CVE-2022-4899_zstd", "llama3-8b", "L2"),
-    ("CVE-2022-4899_zstd", "mistral-7b", "L2"),
-    ("CVE-2022-4899_zstd", "qwen2.5-7b", "L2"),
-    # L1 completada y staged (2026-05-10).
-    ("CVE-2022-4899_zstd", "qwen2.5-7b", "L1"),
-    # Cuarentena L1 (2026-05-10): corte anticipado por `LLM requested early stop`
-    # con deriva de ANALYZE fuera de CVE (respuesta menciona CVE ajeno).
-    ("CVE-2022-4899_zstd", "llama3-8b", "L1"),
-    # Cuarentena L1 (2026-05-10): deriva persistente de Mistral fuera de dominio
-    # en tarea .txt (ops SWF/EXIF y parseo JSON inestable) frente a baseline Gemini L1.
-    ("CVE-2022-4899_zstd", "mistral-7b", "L1"),
-    ("CVE-2023-29469_libxml2", "llama3-8b", "L3"),
-    ("CVE-2023-29469_libxml2", "mistral-7b", "L3"),
-    ("CVE-2023-29469_libxml2", "qwen2.5-7b", "L3"),
-    ("CVE-2023-39804_gnutar", "llama3-8b", "L3"),
-    ("CVE-2023-39804_gnutar", "llama3-8b", "L2"),
-    ("CVE-2023-39804_gnutar", "mistral-7b", "L2"),
-    ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L2"),
-    ("CVE-2023-39804_gnutar", "qwen2.5-7b", "L3"),
-    ("CVE-2024-57970_libarchive", "llama3-8b", "L3"),
-    # L1 completada y staged (2026-05-10).
-    ("CVE-2024-57970_libarchive", "llama3-8b", "L1"),
-    # Cuarentena temporal: combinaciones L2 con timeout prolongado o bloqueo manual
-    # en ejecuciones largas (>=12000s) sin artefacto util de run.
-    ("CVE-2024-57970_libarchive", "mistral-7b", "L2"),
-    ("CVE-2025-26623_exiv2", "mistral-7b", "L2"),
-    ("CVE-2025-26623_exiv2", "qwen2.5-7b", "L2"),
-    # Cuarentena temporal: mistral en jq deriva fuera de dominio (ops SWF/EXIF/JSON),
-    # reintentos de parseo JSON y timeouts prolongados sin artefacto diferencial util.
-    ("CVE-2025-49014_jq", "mistral-7b", "L2"),
-    ("CVE-2025-49014_jq", "mistral-7b", "L1"),
-    ("CVE-2025-49014_jq", "mistral-7b", "L0"),
-    # Marcadas como completadas/staged por ejecucion manual validada.
-    ("CVE-2025-49014_jq", "llama3-8b", "L2"),
-    ("CVE-2025-49014_jq", "qwen2.5-7b", "L2"),
+    ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L3"),
+    ("CVE-2014-2525_libyaml", "gpt-oss-20b", "L3"),
+    ("CVE-2014-2525_libyaml", "ministral-3-8b", "L3"),
+    ("CVE-2016-9827_libming", "glm-5.1", "L3"),
+    ("CVE-2016-9827_libming", "qwen3-coder-next", "L3"),
+    ("CVE-2016-9827_libming", "gpt-oss-20b", "L3"),
+    ("CVE-2016-9827_libming", "ministral-3-8b", "L3"),
+    ("CVE-2021-32292_jsonc", "glm-5.1", "L3"),
+    ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L3"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L3"),
+    ("CVE-2021-32292_jsonc", "ministral-3-8b", "L3"),
+    ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L3"),
+    ("CVE-2022-24724_cmark-gfm", "qwen3-coder-next", "L3"),
+    ("CVE-2022-24724_cmark-gfm", "gpt-oss-20b", "L3"),
+    ("CVE-2022-24724_cmark-gfm", "ministral-3-8b", "L3"),
+    ("CVE-2022-4899_zstd", "glm-5.1", "L3"),
+    ("CVE-2022-4899_zstd", "qwen3-coder-next", "L3"),
+    ("CVE-2022-4899_zstd", "gpt-oss-20b", "L3"),
+    ("CVE-2023-29469_libxml2", "gpt-oss-20b", "L3"),
+    ("CVE-2023-39804_gnutar", "glm-5.1", "L3"),
+    ("CVE-2023-39804_gnutar", "qwen3-coder-next", "L3"),
+    ("CVE-2023-39804_gnutar", "gpt-oss-20b", "L3"),
+    ("CVE-2023-39804_gnutar", "ministral-3-8b", "L3"),
+    ("CVE-2024-57970_libarchive", "glm-5.1", "L3"),
+    ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L3"),
+    ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L3"),
+    ("CVE-2024-57970_libarchive", "ministral-3-8b", "L3"),
+    ("CVE-2025-26623_exiv2", "glm-5.1", "L3"),
+    ("CVE-2025-26623_exiv2", "qwen3-coder-next", "L3"),
+    ("CVE-2025-26623_exiv2", "gpt-oss-20b", "L3"),
+    ("CVE-2025-49014_jq", "glm-5.1", "L3"),
+    ("CVE-2025-49014_jq", "qwen3-coder-next", "L3"),
+    ("CVE-2025-49014_jq", "gpt-oss-20b", "L3"),
 }
+
 
 # Exclusions that must never be scheduled by the automatic batch, regardless
 # of model alias or level.
@@ -497,7 +448,16 @@ def find_existing_level_run(
     model_dir = runs_root / cve / model_alias
     dest = canonical_dest(runs_root, cve, model_alias, level)
     if dest.is_dir():
-        return True, f"exists-canonical:{dest.name}"
+        ok, why = validate_run_dir(
+            dest,
+            cve,
+            level,
+            expected_model=expected_model,
+            expected_max_iters=expected_max_iters,
+        )
+        if ok:
+            return True, f"exists-canonical:{dest.name}"
+        return False, f"canonical-invalid:{why}"
     if not model_dir.is_dir():
         return False, "model-dir-missing"
 
@@ -513,6 +473,7 @@ def find_existing_level_run(
             and (expected_model is None or summary.get("model") == expected_model)
             and (expected_max_iters is None or summary.get("max_iters") == expected_max_iters)
             and has_min_run_structure(child, summary)
+            and is_campaign_complete(summary)
         ):
             return True, f"exists-legacy:{child.name}"
     return False, "pending"
@@ -538,7 +499,23 @@ def has_min_run_structure(run_dir: Path, summary: dict[str, Any]) -> bool:
     # Compatible con CVEs especiales: una run puede fallar sin crash, pero debe persistir artefactos.
     if total_iters == 0:
         return (run_dir / "summary.json").is_file() or (run_dir / str(summary.get("task_id", "")) / "summary.json").is_file()
-    return len(iter_dirs) >= 1
+    return len(iter_dirs) >= total_iters
+
+
+def is_campaign_complete(summary: dict[str, Any]) -> bool:
+    """
+    A run is complete if:
+    - it found a confirmed success early, or
+    - it consumed the full scheduled max_iters budget.
+    """
+    success = summary.get("success")
+    total_iters = summary.get("total_iters")
+    max_iters = summary.get("max_iters")
+    if success is True:
+        return True
+    if isinstance(total_iters, int) and isinstance(max_iters, int):
+        return total_iters >= max_iters
+    return False
 
 
 def has_partial_run_structure(run_dir: Path) -> bool:
@@ -574,6 +551,8 @@ def validate_run_dir(run_dir: Path, cve: str, level: str, expected_model: str | 
         return False, f"summary-max-iters-mismatch:{summary.get('max_iters')}"
     if not has_min_run_structure(run_dir, summary):
         return False, "summary-structure-invalid"
+    if not is_campaign_complete(summary):
+        return False, f"summary-incomplete-iters:{summary.get('total_iters')}/{summary.get('max_iters')}"
     return True, "ok"
 
 
@@ -777,6 +756,8 @@ def detect_run_anomalies(output: str) -> list[str]:
         add("harness-target-not-executable")
     if "invalid port: '11434:generatecontent'" in text:
         add("vertex-api-base-leak")
+    if "llm requested early stop" in text:
+        add("llm-stop-early")
 
     # Container runtime errors that can still leave partial artifacts
     if "oci runtime create failed" in text or "failed to create shim task" in text:
@@ -1322,6 +1303,19 @@ def main() -> int:
             log("ERROR fuente fuera del directorio esperado, se aborta esta combinacion")
             continue
 
+        critical_anomalies = {"run-dir-partial", "summary-missing-or-invalid", "llm-stop-early"}
+        critical_hits = [code for code in run_anomalies if code in critical_anomalies]
+        if critical_hits:
+            msg = f"critical-run-anomaly:{','.join(critical_hits)}"
+            failed.append((combo, msg))
+            update_combo_state(state, combo, "failed", msg)
+            save_state(state_path, state)
+            log(
+                "ERROR run descartada por anomalia critica: "
+                f"{combo.cve} {combo.model_alias} {combo.level} -> {critical_hits}"
+            )
+            continue
+
         if run_dir.resolve() == dest.resolve() and not source_existed_before:
             rel = dest.relative_to(repo_root).as_posix()
             ok_stage, stage_reason, staged_rel_files = stage_run_files_safely(
@@ -1350,11 +1344,35 @@ def main() -> int:
             continue
 
         if dest.exists():
-            skipped.append((combo, f"destination-exists:{dest.name}"))
-            update_combo_state(state, combo, "skipped", f"destination-exists:{dest.name}")
-            save_state(state_path, state)
-            log(f"SKIP destino ya existe: {dest}")
-            continue
+            dest_ok, dest_why = validate_run_dir(
+                dest,
+                combo.cve,
+                combo.level,
+                expected_model=combo.model_spec,
+                expected_max_iters=combo.max_iters,
+            )
+            if not dest_ok and safe_relative_to(dest, model_dir):
+                quarantine_name = f"{dest.name}_DISCARDED_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                quarantine_path = model_dir / quarantine_name
+                try:
+                    shutil.move(str(dest), str(quarantine_path))
+                    log(
+                        "WARNING destino canonico invalido movido a cuarentena: "
+                        f"{dest.name} -> {quarantine_name} ({dest_why})"
+                    )
+                except Exception as q_e:
+                    msg = f"quarantine-invalid-canonical-failed:{q_e}"
+                    failed.append((combo, msg))
+                    update_combo_state(state, combo, "failed", msg)
+                    save_state(state_path, state)
+                    log(f"ERROR no se pudo poner en cuarentena destino invalido: {q_e}")
+                    continue
+            else:
+                skipped.append((combo, f"destination-exists:{dest.name}"))
+                update_combo_state(state, combo, "skipped", f"destination-exists:{dest.name}")
+                save_state(state_path, state)
+                log(f"SKIP destino ya existe: {dest}")
+                continue
 
         try:
             shutil.move(str(run_dir), str(dest))
