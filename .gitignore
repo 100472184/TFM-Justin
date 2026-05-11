@@ -3,6 +3,8 @@ __pycache__/
 .venv/
 .venv-oh/
 .env
+.env.local
+.env.*.local
 dist/
 build/
 *.log

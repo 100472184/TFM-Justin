@@ -38,6 +38,7 @@ LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
 RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
 STATE_FILE = ".run_pending_models_state.json"
 DEFAULT_MAX_STAGE_FILE_MB = 90
+LOCAL_ENV_FILENAME = ".env.local"
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
@@ -943,9 +944,55 @@ def choose_seed_for_task(
     return None, f"{reason}(generator-attempted:{';'.join(generator_results)})"
 
 
-def build_run_env(model_spec: str) -> tuple[dict[str, str], list[str]]:
+def _parse_local_env_file(path: Path) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        parsed[key] = value
+    return parsed
+
+
+def load_local_llm_env(repo_root: Path) -> tuple[dict[str, str], Path | None]:
+    env_file = repo_root / LOCAL_ENV_FILENAME
+    if not env_file.is_file():
+        return {}, None
+    return _parse_local_env_file(env_file), env_file
+
+
+def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     env = os.environ.copy()
+    for key, value in local_llm_env.items():
+        if key not in env or not env.get(key):
+            env[key] = value
+
+    # Allow storing only OLLAMA_API_KEY in local env and map to the key used
+    # by the OpenHands client wrapper.
+    if model_spec.startswith("ollama/") and not env.get("LLM_API_KEY") and env.get("OLLAMA_API_KEY"):
+        env["LLM_API_KEY"] = env["OLLAMA_API_KEY"]
+
     sanitized: list[str] = []
+    # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by
+    # stale global LLM_BASE_URL from shell/session.
+    if model_spec.startswith("ollama/") and "OLLAMA_API_BASE" in local_llm_env and "LLM_BASE_URL" not in local_llm_env:
+        if env.get("LLM_BASE_URL"):
+            env.pop("LLM_BASE_URL", None)
+            sanitized.append("LLM_BASE_URL")
+
     if model_spec.startswith("vertex_ai/"):
         for key in ("LLM_BASE_URL", "OLLAMA_API_BASE", "OLLAMA_HOST"):
             if env.get(key):
@@ -1004,6 +1051,12 @@ def main() -> int:
     if args.run_timeout_sec <= 0:
         log("ERROR preflight: --run-timeout-sec debe ser > 0")
         return 2
+
+    local_llm_env, local_llm_env_path = load_local_llm_env(repo_root)
+    if local_llm_env_path:
+        log(f"INFO local-llm-env cargado: {local_llm_env_path.name}")
+    else:
+        log(f"INFO local-llm-env no encontrado ({LOCAL_ENV_FILENAME}); usando entorno del sistema")
 
     cves_filter = set(args.cve)
     models_filter = set(args.model)
@@ -1079,7 +1132,7 @@ def main() -> int:
             )
             log(f"DRY-RUN run-cmd: {cmd}")
             log(f"DRY-RUN seed-policy: {seed_reason}")
-            _, sanitized = build_run_env(combo.model_spec)
+            _, sanitized = build_run_env(combo.model_spec, local_llm_env)
             if sanitized:
                 log(f"DRY-RUN env-sanitize: {','.join(sanitized)}")
             log(f"DRY-RUN mv: <new_run_dir> -> {dest}")
@@ -1136,7 +1189,7 @@ def main() -> int:
             "--seed",
             str(seed_path),
         ]
-        run_env, sanitized_env = build_run_env(combo.model_spec)
+        run_env, sanitized_env = build_run_env(combo.model_spec, local_llm_env)
         if sanitized_env:
             log(f"INFO env sanitizado para {combo.model_spec}: {','.join(sanitized_env)}")
         log(f"INFO {seed_reason} para {combo.cve}")
