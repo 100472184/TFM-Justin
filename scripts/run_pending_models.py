@@ -28,10 +28,16 @@ LEVEL_ITERS = {
     "L0": 50,
 }
 
+# Active cloud model set (2026-05-11).
+# NOTE:
+# - Keep aliases stable and filesystem-safe (used as directory names under runs/).
+# - Keep model tags aligned with what `https://ollama.com/api/tags` returns for
+#   the current API key/account to avoid schedule-time hard failures.
 MODEL_SPECS = {
-    "llama3-8b": "ollama/llama3:8b",
-    "mistral-7b": "ollama/mistral:7b",
-    "qwen2.5-7b": "ollama/qwen2.5:7b",
+    "ministral-3-8b": "ollama/ministral-3:8b",
+    "gemma3-12b": "ollama/gemma3:12b",
+    "gpt-oss-20b": "ollama/gpt-oss:20b",
+    "glm-5.1": "ollama/glm-5.1",
 }
 
 LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
