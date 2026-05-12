@@ -55,6 +55,7 @@ RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
 STATE_FILE = ".run_pending_models_state.json"
 DEFAULT_MAX_STAGE_FILE_MB = 90
 LOCAL_ENV_FILENAME = ".env.local"
+OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC = "300"
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
@@ -205,6 +206,12 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     # Quarantine: repeated low-signal jq compile-error drift and manual interruption.
     # Keep out of automatic L2 queue until jq-specific guardrails are tightened.
     ("CVE-2025-49014_jq", "ministral-3-8b", "L2"),
+    # Validated completion (2026-05-12): deterministic success at iter_001
+    # with open-seed methodology for json-c (L1 track).
+    ("CVE-2021-32292_jsonc", "glm-5.1", "L1"),
+    # Validated L1 completions (2026-05-13): completed/staged in automatic batch.
+    ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L1"),
+    ("CVE-2022-4899_zstd", "glm-5.1", "L1"),
 }
 
 # Guardrail note:
@@ -1229,6 +1236,12 @@ def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[
         env["LLM_API_KEY"] = env["OLLAMA_API_KEY"]
 
     sanitized: list[str] = []
+    if model_spec.startswith("ollama/"):
+        effective_timeout = env.get("LLM_TIMEOUT", "").strip()
+        if effective_timeout != OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC:
+            env["LLM_TIMEOUT"] = OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC
+            sanitized.append(f"LLM_TIMEOUT={OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC}")
+
     # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by
     # stale global LLM_BASE_URL from shell/session.
     if model_spec.startswith("ollama/") and "OLLAMA_API_BASE" in local_llm_env and "LLM_BASE_URL" not in local_llm_env:
