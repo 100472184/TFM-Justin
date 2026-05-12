@@ -5,6 +5,164 @@ import json
 from typing import Dict, Optional
 
 
+def _safe_eval_int_expr(expr: str) -> int | None:
+    """
+    Safely evaluate a very small integer arithmetic expression.
+    Accepted tokens: digits, spaces, + - * / // % parentheses.
+    Returns None when expression is invalid or unsafe.
+    """
+    import ast
+
+    expr = expr.strip()
+    if not expr:
+        return None
+    # Keep this strict: no names, no quotes, no commas, no dots/exponents.
+    allowed_chars = set("0123456789+-*/()% \t")
+    if any(ch not in allowed_chars for ch in expr):
+        return None
+    if len(expr) > 120:
+        return None
+
+    try:
+        node = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return None
+
+    def _eval(n: ast.AST) -> int:
+        if isinstance(n, ast.Expression):
+            return _eval(n.body)
+        if isinstance(n, ast.Constant) and isinstance(n.value, int):
+            return n.value
+        if isinstance(n, ast.UnaryOp) and isinstance(n.op, (ast.UAdd, ast.USub)):
+            v = _eval(n.operand)
+            return v if isinstance(n.op, ast.UAdd) else -v
+        if isinstance(n, ast.BinOp):
+            left = _eval(n.left)
+            right = _eval(n.right)
+            if isinstance(n.op, ast.Add):
+                return left + right
+            if isinstance(n.op, ast.Sub):
+                return left - right
+            if isinstance(n.op, ast.Mult):
+                return left * right
+            if isinstance(n.op, ast.FloorDiv):
+                if right == 0:
+                    raise ValueError("division by zero")
+                return left // right
+            if isinstance(n.op, ast.Div):
+                if right == 0:
+                    raise ValueError("division by zero")
+                # Keep JSON numeric fields integral.
+                if left % right != 0:
+                    raise ValueError("non-integer division")
+                return left // right
+            if isinstance(n.op, ast.Mod):
+                if right == 0:
+                    raise ValueError("mod by zero")
+                return left % right
+        raise ValueError(f"Unsupported expression node: {type(n).__name__}")
+
+    try:
+        value = _eval(node)
+    except Exception:
+        return None
+
+    # Guardrails: avoid absurd values from hallucinated huge expressions.
+    if not isinstance(value, int):
+        return None
+    if abs(value) > 10_000_000_000:
+        return None
+    return value
+
+
+def _normalize_json_numeric_expressions(text: str) -> str:
+    """
+    Normalize JSON numeric fields that hallucinate arithmetic expressions:
+      "offset": 17 + (12000 * 2)
+    -> "offset": 24017
+
+    Only rewrites values in object fields (after ':') while outside strings.
+    """
+    out: list[str] = []
+    n = len(text)
+    i = 0
+    in_string = False
+    escaped = False
+
+    while i < n:
+        ch = text[i]
+
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch != ":":
+            out.append(ch)
+            i += 1
+            continue
+
+        # Copy ":" and following whitespace
+        out.append(ch)
+        i += 1
+        while i < n and text[i].isspace():
+            out.append(text[i])
+            i += 1
+
+        if i >= n:
+            break
+
+        # Only attempt normalization for unquoted numeric-like starts
+        if text[i] not in "0123456789+-(":
+            continue
+
+        expr_start = i
+        depth = 0
+        j = i
+        while j < n:
+            c = text[j]
+            if c == "(":
+                depth += 1
+                j += 1
+                continue
+            if c == ")":
+                depth = max(0, depth - 1)
+                j += 1
+                continue
+            if depth == 0 and c in ",}]":
+                break
+            # Stop if we hit a newline and there is no arithmetic hint.
+            if c in "\r\n" and all(op not in text[expr_start:j] for op in "+-*/()%"):
+                break
+            j += 1
+
+        expr = text[expr_start:j].strip()
+        if expr and any(op in expr for op in "+-*/()%"):
+            evaluated = _safe_eval_int_expr(expr)
+            if evaluated is not None:
+                out.append(str(evaluated))
+                i = j
+                continue
+
+        # Keep original when we cannot safely evaluate
+        out.append(text[expr_start:j])
+        i = j
+
+    return "".join(out)
+
+
 def _strip_json_comments_safe(text: str) -> str:
     """Remove // and /* */ comments only when outside JSON strings."""
     out = []
@@ -306,6 +464,10 @@ class OpenHandsLLMClient:
                 
                 # Repair invalid raw control chars inside string values
                 content = _escape_unescaped_control_chars_in_strings(content)
+
+                # Normalize non-JSON arithmetic in numeric fields (common LLM issue):
+                # {"offset": 17 + (12000 * 2)} -> {"offset": 24017}
+                content = _normalize_json_numeric_expressions(content)
 
                 content = content.strip()
                 
