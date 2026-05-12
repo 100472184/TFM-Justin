@@ -550,6 +550,126 @@ def validate_seed(seed_bytes: bytes, extension: str) -> tuple[bool, str]:
         return True, f"Warning: No validator for extension {ext}"
 
 
+def _to_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _hex_has_nul_byte(hex_str: str) -> bool:
+    clean = hex_str.replace(" ", "").lower()
+    if not clean or len(clean) % 2 != 0:
+        return False
+    return any(clean[i:i + 2] == "00" for i in range(0, len(clean), 2))
+
+
+def _precheck_mutations_for_seed(mutations: Any, seed_len: int, extension: str) -> str | None:
+    """
+    Fast mutation lint before apply_mutations().
+    This catches repeated low-signal failures early (e.g. NUL bytes in text seeds).
+    """
+    if not isinstance(mutations, list):
+        return "mutations must be a list"
+
+    ext = extension.lower()
+    text_seed = ext in {".txt", ".md", ".jq"}
+    virtual_len = seed_len
+
+    for i, mut in enumerate(mutations, 1):
+        if not isinstance(mut, dict):
+            return f"mutation #{i} must be an object"
+        op = str(mut.get("op", "")).strip()
+        if not op:
+            return f"mutation #{i} missing 'op'"
+
+        if op in {"append_bytes", "overwrite_range", "insert_repeated_bytes"}:
+            hex_str = str(mut.get("hex", "")).replace(" ", "")
+            if text_seed and _hex_has_nul_byte(hex_str):
+                return f"text-seed guard: mutation #{i} ({op}) contains byte 00"
+
+        if op == "truncate":
+            new_len = _to_int(mut.get("new_len"))
+            if new_len is None:
+                return f"mutation #{i} truncate requires integer new_len"
+            if new_len < 0:
+                return f"mutation #{i} truncate new_len must be >= 0"
+            if text_seed and new_len > virtual_len:
+                return (
+                    f"text-seed guard: mutation #{i} truncate new_len {new_len} "
+                    f"> current length {virtual_len} (would pad NUL bytes)"
+                )
+            virtual_len = new_len
+            continue
+
+        if op == "flip_bit":
+            offset = _to_int(mut.get("offset"))
+            if offset is None:
+                return f"mutation #{i} flip_bit requires integer offset"
+            if offset < 0 or offset >= virtual_len:
+                return f"mutation #{i} flip_bit offset {offset} out of range [0, {virtual_len})"
+            bit = _to_int(mut.get("bit"))
+            if bit is None or bit < 0 or bit > 7:
+                return f"mutation #{i} flip_bit bit must be in [0, 7]"
+            continue
+
+        if op == "append_bytes":
+            hex_str = str(mut.get("hex", "")).replace(" ", "")
+            if hex_str and len(hex_str) % 2 == 0:
+                virtual_len += len(hex_str) // 2
+            continue
+
+        if op == "overwrite_range":
+            offset = _to_int(mut.get("offset"))
+            if offset is None:
+                return f"mutation #{i} overwrite_range requires integer offset"
+            if offset < 0:
+                return f"mutation #{i} overwrite_range offset must be >= 0"
+            if text_seed and offset > virtual_len:
+                return (
+                    f"text-seed guard: mutation #{i} overwrite_range offset {offset} "
+                    f"> current length {virtual_len} (would inject NUL gap)"
+                )
+            hex_str = str(mut.get("hex", "")).replace(" ", "")
+            if hex_str and len(hex_str) % 2 == 0:
+                byte_len = len(hex_str) // 2
+                virtual_len = max(virtual_len, offset + byte_len)
+            continue
+
+        if op == "repeat_range":
+            offset = _to_int(mut.get("offset"))
+            length = _to_int(mut.get("length"))
+            times = _to_int(mut.get("times", 1))
+            if offset is None or length is None or times is None:
+                return f"mutation #{i} repeat_range requires integer offset/length/times"
+            if offset < 0 or offset >= virtual_len:
+                return f"mutation #{i} repeat_range offset {offset} out of range [0, {virtual_len})"
+            if length <= 0 or times < 1:
+                continue
+            chunk_len = min(length, virtual_len - offset)
+            if times > 1 and chunk_len > 0:
+                virtual_len += chunk_len * (times - 1)
+            continue
+
+        if op == "insert_repeated_bytes":
+            offset = _to_int(mut.get("offset"))
+            times = _to_int(mut.get("times", 1))
+            if offset is None or times is None:
+                return f"mutation #{i} insert_repeated_bytes requires integer offset/times"
+            if offset < 0 or offset > virtual_len:
+                return f"mutation #{i} insert_repeated_bytes offset {offset} out of range [0, {virtual_len}]"
+            if times < 1:
+                continue
+            hex_str = str(mut.get("hex", "")).replace(" ", "")
+            if hex_str and len(hex_str) % 2 == 0:
+                virtual_len += (len(hex_str) // 2) * times
+            continue
+
+        # Unknown/custom ops are handled by apply_mutations or downstream validation.
+
+    return None
+
+
 def validate_text_seed_structure(seed_bytes: bytes) -> tuple[bool, str]:
     """
     Validate text-like seeds used as CLI arguments.
@@ -1214,6 +1334,16 @@ def run_pipeline(
                 for i, fa in enumerate(failed_attempts[-3:], 1):  # Show last 3
                     feedback_text += f"\nAttempt {fa['attempt']}: {fa['error']}\n"
                     feedback_text += f"  Mutations: {json.dumps(fa['mutations'])}\n"
+                if seed_extension.lower() in {".txt", ".md", ".jq"}:
+                    recent_errors = " | ".join(str(fa.get("error", "")) for fa in failed_attempts[-3:])
+                    if "NUL byte" in recent_errors or "text-seed guard" in recent_errors:
+                        feedback_text += (
+                            "\nHARD CONSTRAINTS FOR TEXT SEEDS:\n"
+                            "- Never use byte 00 in any hex field.\n"
+                            "- Do not extend with truncate (new_len must be <= current seed length).\n"
+                            "- Do not use overwrite_range with offset past current length.\n"
+                            "- Keep payload text-only (printable ASCII + newline/tab).\n"
+                        )
                 feedback_text += "\n⚠️ Generate DIFFERENT mutations that preserve valid seed structure.\n"
             
             generate_template = env.get_template("generate.j2")
@@ -1223,6 +1353,7 @@ def run_pipeline(
                 analysis=analysis,
                 seed_preview=seed_preview,
                 seed_length=len(current_seed),
+                seed_extension=seed_extension,
                 iteration=iteration,
                 verify_history=verify_history[-3:],
                 tried_sizes=tried_sizes_str
@@ -1269,6 +1400,17 @@ def run_pipeline(
                     "mutations": []
                 })
                 print("  No mutations proposed")
+                continue
+
+            precheck_error = _precheck_mutations_for_seed(mutations, len(current_seed), seed_extension)
+            if precheck_error:
+                mutation_error = f"Mutation precheck error: {precheck_error}"
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "error": mutation_error,
+                    "mutations": mutations,
+                })
+                print(f"  {mutation_error}")
                 continue
             
             # Try to apply mutations
@@ -1332,12 +1474,19 @@ def run_pipeline(
         
         write_text(iter_dir / "generate.json", json.dumps(generation_result, indent=2))
         
-        # Get rationale safely
+        # Get rationale safely (some models return dict/list instead of plain string)
         if isinstance(generation, dict):
-            rationale = generation.get('rationale', 'N/A')
+            rationale_raw = generation.get("rationale", "N/A")
         else:
-            rationale = 'N/A (array response)'
-        print(f"  Rationale: {rationale[:100]}...")
+            rationale_raw = "N/A (array response)"
+        if isinstance(rationale_raw, str):
+            rationale = rationale_raw
+        else:
+            try:
+                rationale = json.dumps(rationale_raw, ensure_ascii=False)
+            except Exception:
+                rationale = str(rationale_raw)
+        print(f"  Rationale: {_one_line(rationale, 100)}")
         
         # Check if we exhausted all attempts
         if not mutation_success:

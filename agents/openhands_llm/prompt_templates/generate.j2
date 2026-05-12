@@ -43,7 +43,16 @@ This helps validate the CVE fix and develop better security testing tools.
 
 **Current Seed:**
 - Length: {{ seed_length }} bytes
+- Extension: {{ seed_extension }}
 - Hex preview: {{ seed_preview }}
+
+{% if seed_extension.lower() in [".txt", ".md", ".jq"] %}
+**TEXT-SEED HARD CONSTRAINTS (MUST FOLLOW):**
+- Never emit byte `00` in any `hex` field.
+- Do NOT expand with `truncate` (`new_len` must be <= {{ seed_length }}).
+- Do NOT use `overwrite_range` with offset > {{ seed_length }}.
+- Prefer printable text bytes: `20-7e` and line breaks (`0a`, optional `09`).
+{% endif %}
 
 **IMPORTANT - Fresh Seed Each Iteration:**
 - Each iteration starts from the FRESH base seed ({{ seed_length }} bytes)

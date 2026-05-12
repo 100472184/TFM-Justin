@@ -277,6 +277,72 @@ def _escape_unescaped_control_chars_in_strings(text: str) -> str:
     return "".join(out)
 
 
+def _escape_invalid_backslashes_in_strings(text: str) -> str:
+    """
+    Escape invalid backslash sequences inside JSON strings.
+    Example: "\\(" -> "\\\\(" so json.loads() can parse it.
+    """
+    out: list[str] = []
+    in_string = False
+    i = 0
+    n = len(text)
+
+    while i < n:
+        ch = text[i]
+
+        if not in_string:
+            out.append(ch)
+            if ch == '"':
+                in_string = True
+            i += 1
+            continue
+
+        # Inside string
+        if ch == '"':
+            out.append(ch)
+            in_string = False
+            i += 1
+            continue
+
+        if ch != "\\":
+            out.append(ch)
+            i += 1
+            continue
+
+        # Backslash inside string
+        if i + 1 >= n:
+            # Trailing "\" -> escape it
+            out.append("\\\\")
+            i += 1
+            continue
+
+        nxt = text[i + 1]
+        if nxt in '"\\/bfnrt':
+            out.append("\\")
+            out.append(nxt)
+            i += 2
+            continue
+
+        if nxt == "u":
+            # Keep valid \uXXXX, otherwise escape the backslash and continue.
+            if i + 5 < n:
+                hex4 = text[i + 2 : i + 6]
+                if all(c in "0123456789abcdefABCDEF" for c in hex4):
+                    out.append("\\u")
+                    out.append(hex4)
+                    i += 6
+                    continue
+            out.append("\\\\")
+            i += 1
+            continue
+
+        # Invalid escape sequence like \(
+        out.append("\\\\")
+        i += 1
+
+    return "".join(out)
+
+
 class OpenHandsLLMClient:
     """Wrapper around OpenHands SDK LLM for JSON completions."""
     
@@ -464,6 +530,9 @@ class OpenHandsLLMClient:
                 
                 # Repair invalid raw control chars inside string values
                 content = _escape_unescaped_control_chars_in_strings(content)
+
+                # Repair invalid escape sequences inside string values
+                content = _escape_invalid_backslashes_in_strings(content)
 
                 # Normalize non-JSON arithmetic in numeric fields (common LLM issue):
                 # {"offset": 17 + (12000 * 2)} -> {"offset": 24017}
