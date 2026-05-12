@@ -710,7 +710,7 @@ def validate_json_structure(seed_bytes: bytes) -> tuple[bool, str]:
         return False, f"JSON validation error: {str(e)[:100]}"
 
 
-def _task_specific_seed_guard(task_id: str, seed_bytes: bytes, extension: str) -> tuple[bool, str]:
+def _task_specific_seed_guard(task_id: str, level: str, seed_bytes: bytes, extension: str) -> tuple[bool, str]:
     """
     Optional deterministic guardrails for tasks with known trigger envelopes.
     These checks are model-agnostic and apply equally to every model.
@@ -727,9 +727,11 @@ def _task_specific_seed_guard(task_id: str, seed_bytes: bytes, extension: str) -
     if seed_len > 65536:
         return False, f"jsonc-boundary guard: seed too large ({seed_len}); keep <= 65536 bytes"
 
-    open_prefix = b'{"a":"'
-    if not seed_bytes.startswith(open_prefix):
-        return False, "jsonc-boundary guard: seed must keep open-prefix 7b2261223a22 ({\"a\":\")"
+    # Open-seed methodology is enforced only for lower levels.
+    if level in {"L0", "L1"}:
+        open_prefix = b'{"a":"'
+        if not seed_bytes.startswith(open_prefix):
+            return False, "jsonc-boundary guard: seed must keep open-prefix 7b2261223a22 ({\"a\":\") in L0/L1"
 
     first_nul = seed_bytes.find(b"\x00")
     if first_nul == -1:
@@ -1481,7 +1483,7 @@ def run_pipeline(
                 print(f"  ✗ Validation failed: {error_msg[:100]}")
                 continue
 
-            task_guard_ok, task_guard_error = _task_specific_seed_guard(task_id, new_seed, seed_extension)
+            task_guard_ok, task_guard_error = _task_specific_seed_guard(task_id, level, new_seed, seed_extension)
             if not task_guard_ok:
                 mutation_error = task_guard_error
                 failed_attempts.append({

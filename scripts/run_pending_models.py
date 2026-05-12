@@ -85,12 +85,34 @@ LOCKED_BASE_SEEDS: dict[str, dict[str, str]] = {
         "filename": "base.swf",
         "sha256": "74d50d87f446dcd17922ae39f454c5e40ba8c2815f6da43d2d0a07f110e51fd0",
     },
-    # Open-seed lock for json-c boundary reproduction parity.
-    # Keeps the campaign aligned with the proven methodology:
-    # seed prefix = {"a":" (6 bytes), then boundary construction at 32KB.
+    # Open-seed lock for json-c boundary reproduction parity when using
+    # the open-seed track.
     "CVE-2021-32292_jsonc": {
         "filename": "base.json",
         "sha256": "93e4c91583682694b653e73ad004f627e55acb30167219e09d45e23425e5e77c",
+    },
+}
+
+# Task-specific seed mode matrix (CVE/methodology controls).
+# CVE-2021-32292_jsonc:
+# - L0/L1: open-seed track (base.json => {"a":" )
+# - L2/L3: normal/closed-seed track (seed.json => {"a":""})
+SEED_OVERRIDE_BY_CVE_LEVEL: dict[tuple[str, str], dict[str, str]] = {
+    ("CVE-2021-32292_jsonc", "L0"): {
+        "filename": "base.json",
+        "sha256": "93e4c91583682694b653e73ad004f627e55acb30167219e09d45e23425e5e77c",
+    },
+    ("CVE-2021-32292_jsonc", "L1"): {
+        "filename": "base.json",
+        "sha256": "93e4c91583682694b653e73ad004f627e55acb30167219e09d45e23425e5e77c",
+    },
+    ("CVE-2021-32292_jsonc", "L2"): {
+        "filename": "seed.json",
+        "sha256": "258555fe010df3da34b3920945d0fbc59cebbcff1878bfc2e9206f0f495d81b9",
+    },
+    ("CVE-2021-32292_jsonc", "L3"): {
+        "filename": "seed.json",
+        "sha256": "258555fe010df3da34b3920945d0fbc59cebbcff1878bfc2e9206f0f495d81b9",
     },
 }
 
@@ -1094,14 +1116,43 @@ def _validate_locked_seed(cve: str, seed_path: Path) -> tuple[bool, str]:
     return True, f"seed-locked:{seed_path.name}:{expected_sha[:12]}"
 
 
+def _validate_seed_expected(seed_path: Path, expected_name: str, expected_sha: str) -> tuple[bool, str]:
+    if expected_name and seed_path.name != expected_name:
+        return False, f"seed-lock-name-mismatch:expected:{expected_name}:got:{seed_path.name}"
+    if expected_sha:
+        digest = hashlib.sha256(seed_path.read_bytes()).hexdigest().lower()
+        if digest != expected_sha.lower():
+            return False, f"seed-lock-hash-mismatch:{seed_path.name}:{digest}:expected:{expected_sha.lower()}"
+    return True, f"seed-locked:{seed_path.name}:{expected_sha[:12]}"
+
+
 def choose_seed_for_task(
     repo_root: Path,
     cve: str,
+    level: str | None = None,
     auto_generate: bool = False,
 ) -> tuple[Path | None, str]:
     seeds_dir = repo_root / "tasks" / cve / "seeds"
     if not seeds_dir.is_dir():
         return None, "seed-dir-missing"
+
+    if level:
+        override = SEED_OVERRIDE_BY_CVE_LEVEL.get((cve, level))
+    else:
+        override = None
+    if override:
+        override_name = override.get("filename", "").strip()
+        override_sha = override.get("sha256", "").strip().lower()
+        override_path = seeds_dir / override_name
+        if not override_path.is_file():
+            return None, f"seed-override-missing:{override_name}"
+        ok_override, lock_reason_override = _validate_seed_expected(
+            override_path, override_name, override_sha
+        )
+        if not ok_override:
+            return None, f"seed-selected:{override_name}({lock_reason_override})"
+        return override_path, f"seed-selected:{override_name}({lock_reason_override})(seed-mode-override:{level})"
+
     seed, reason = _pick_seed_candidate(repo_root, cve, seeds_dir)
     if seed:
         ok, lock_reason = _validate_locked_seed(cve, seed)
@@ -1337,7 +1388,9 @@ def main() -> int:
 
         if dry_run:
             log(f"DRY-RUN plan: run + rename -> {dest}")
-            seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve, auto_generate=False)
+            seed_path, seed_reason = choose_seed_for_task(
+                repo_root, combo.cve, combo.level, auto_generate=False
+            )
             seed_fragment = f" --seed {seed_path}" if seed_path else ""
             service = resolve_service_for_combo(combo)
             cmd = (
@@ -1376,7 +1429,9 @@ def main() -> int:
         if harness_probe != "harness/run.sh":
             log(f"INFO harness-detected:{harness_probe} para {combo.cve}")
 
-        seed_path, seed_reason = choose_seed_for_task(repo_root, combo.cve, auto_generate=True)
+        seed_path, seed_reason = choose_seed_for_task(
+            repo_root, combo.cve, combo.level, auto_generate=True
+        )
         if seed_path is None:
             msg = f"{seed_reason}: tasks/{combo.cve}/seeds"
             failed.append((combo, msg))
