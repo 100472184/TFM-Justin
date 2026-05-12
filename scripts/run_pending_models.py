@@ -84,7 +84,14 @@ LOCKED_BASE_SEEDS: dict[str, dict[str, str]] = {
     "CVE-2016-9827_libming": {
         "filename": "base.swf",
         "sha256": "74d50d87f446dcd17922ae39f454c5e40ba8c2815f6da43d2d0a07f110e51fd0",
-    }
+    },
+    # Open-seed lock for json-c boundary reproduction parity.
+    # Keeps the campaign aligned with the proven methodology:
+    # seed prefix = {"a":" (6 bytes), then boundary construction at 32KB.
+    "CVE-2021-32292_jsonc": {
+        "filename": "base.json",
+        "sha256": "93e4c91583682694b653e73ad004f627e55acb30167219e09d45e23425e5e77c",
+    },
 }
 
 # Baseline hardcodeada a partir del estado analizado previamente.
@@ -177,6 +184,12 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     # Keep out of automatic L2 queue until jq-specific guardrails are tightened.
     ("CVE-2025-49014_jq", "ministral-3-8b", "L2"),
 }
+
+# Guardrail note:
+# - Do NOT add L1 hardcoded completions for:
+#   * (CVE-2014-2525_libyaml, glm-5.1, L1)
+#   * (CVE-2016-9827_libming, glm-5.1, L1)
+# These combos should be decided by real run artifacts, not baseline hardcoding.
 
 
 # Exclusions that must never be scheduled by the automatic batch, regardless
