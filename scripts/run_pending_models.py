@@ -163,6 +163,19 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2025-26623_exiv2", "gpt-oss-20b", "L2"),
     ("CVE-2025-49014_jq", "gpt-oss-20b", "L2"),
     ("CVE-2016-9827_libming", "ministral-3-8b", "L2"),
+    # New validated L2 completions (2026-05-12 interrupted batch, pass 3)
+    # These canonical runs were completed/staged in Kali and are treated as valid
+    # campaign artifacts (success=true or full-budget completion).
+    ("CVE-2021-32292_jsonc", "ministral-3-8b", "L2"),
+    ("CVE-2022-24724_cmark-gfm", "ministral-3-8b", "L2"),
+    ("CVE-2022-4899_zstd", "ministral-3-8b", "L2"),
+    ("CVE-2023-29469_libxml2", "ministral-3-8b", "L2"),
+    ("CVE-2023-39804_gnutar", "ministral-3-8b", "L2"),
+    ("CVE-2024-57970_libarchive", "ministral-3-8b", "L2"),
+    ("CVE-2025-26623_exiv2", "ministral-3-8b", "L2"),
+    # Quarantine: repeated low-signal jq compile-error drift and manual interruption.
+    # Keep out of automatic L2 queue until jq-specific guardrails are tightened.
+    ("CVE-2025-49014_jq", "ministral-3-8b", "L2"),
 }
 
 
