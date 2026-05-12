@@ -1105,17 +1105,17 @@ def run_pipeline(
         write_text(iter_dir / "analysis.json", json.dumps(analysis, indent=2))
         # Handle both dict and list responses from LLM
         if isinstance(analysis, dict):
-            analysis_summary = analysis.get('summary', 'N/A')
-            stop_early = analysis.get("stop_early", False)
+            analysis_summary = _one_line(analysis.get("summary", "N/A"), 2000)
+            stop_early = bool(analysis.get("stop_early", False))
         else:
             # LLM returned a list or other type — wrap it so downstream code works
-            analysis_summary = str(analysis)[:100] if analysis else 'N/A'
+            analysis_summary = _one_line(analysis, 2000)
             stop_early = False
             if isinstance(analysis, list):
                 analysis = {"mutations": analysis, "summary": analysis_summary}
             else:
                 analysis = {"summary": analysis_summary}
-        print(f"  Summary: {analysis_summary[:100]}...")
+        print(f"  Summary: {safe_truncate(analysis_summary, 100)}...")
         
         # Check for early stop
         if stop_early and not allow_llm_early_stop:

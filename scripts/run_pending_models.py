@@ -145,6 +145,24 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L2"),
     ("CVE-2016-9827_libming", "qwen3-coder-next", "L2"),
     ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L2"),
+    # New validated L2 completions (2026-05-12 interrupted batch, pass 2)
+    ("CVE-2022-24724_cmark-gfm", "qwen3-coder-next", "L2"),
+    ("CVE-2022-4899_zstd", "qwen3-coder-next", "L2"),
+    ("CVE-2023-39804_gnutar", "qwen3-coder-next", "L2"),
+    ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L2"),
+    ("CVE-2025-26623_exiv2", "qwen3-coder-next", "L2"),
+    ("CVE-2025-49014_jq", "qwen3-coder-next", "L2"),
+    ("CVE-2014-2525_libyaml", "gpt-oss-20b", "L2"),
+    ("CVE-2016-9827_libming", "gpt-oss-20b", "L2"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L2"),
+    ("CVE-2022-24724_cmark-gfm", "gpt-oss-20b", "L2"),
+    ("CVE-2022-4899_zstd", "gpt-oss-20b", "L2"),
+    ("CVE-2023-29469_libxml2", "gpt-oss-20b", "L2"),
+    ("CVE-2023-39804_gnutar", "gpt-oss-20b", "L2"),
+    ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L2"),
+    ("CVE-2025-26623_exiv2", "gpt-oss-20b", "L2"),
+    ("CVE-2025-49014_jq", "gpt-oss-20b", "L2"),
+    ("CVE-2016-9827_libming", "ministral-3-8b", "L2"),
 }
 
 
