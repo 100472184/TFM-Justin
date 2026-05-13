@@ -57,6 +57,9 @@ DEFAULT_MAX_STAGE_FILE_MB = 90
 LOCAL_ENV_FILENAME = ".env.local"
 OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC = "180"
 OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS = "3"
+OLLAMA_EFFECTIVE_GENERATE_TIMEOUT_SEC = "90"
+OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS = "1600"
+OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES = "0"
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
@@ -1255,6 +1258,18 @@ def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[
         if effective_attempts != OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS:
             env["LLM_MAX_GENERATE_ATTEMPTS"] = OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS
             sanitized.append(f"LLM_MAX_GENERATE_ATTEMPTS={OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS}")
+        effective_generate_timeout = env.get("LLM_GENERATE_TIMEOUT", "").strip()
+        if effective_generate_timeout != OLLAMA_EFFECTIVE_GENERATE_TIMEOUT_SEC:
+            env["LLM_GENERATE_TIMEOUT"] = OLLAMA_EFFECTIVE_GENERATE_TIMEOUT_SEC
+            sanitized.append(f"LLM_GENERATE_TIMEOUT={OLLAMA_EFFECTIVE_GENERATE_TIMEOUT_SEC}")
+        effective_generate_max_tokens = env.get("LLM_GENERATE_MAX_TOKENS", "").strip()
+        if effective_generate_max_tokens != OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS:
+            env["LLM_GENERATE_MAX_TOKENS"] = OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS
+            sanitized.append(f"LLM_GENERATE_MAX_TOKENS={OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS}")
+        effective_generate_json_retries = env.get("LLM_GENERATE_JSON_RETRIES", "").strip()
+        if effective_generate_json_retries != OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES:
+            env["LLM_GENERATE_JSON_RETRIES"] = OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES
+            sanitized.append(f"LLM_GENERATE_JSON_RETRIES={OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES}")
 
     # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by
     # stale global LLM_BASE_URL from shell/session.

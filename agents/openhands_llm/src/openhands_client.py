@@ -5,6 +5,25 @@ import json
 from typing import Dict, Optional
 
 
+def _read_env_int(name: str, minimum: int | None = None, maximum: int | None = None) -> int | None:
+    """Read an integer env var with optional bounds; return None when invalid."""
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if minimum is not None and value < minimum:
+        return None
+    if maximum is not None and value > maximum:
+        return None
+    return value
+
+
 def _safe_eval_int_expr(expr: str) -> int | None:
     """
     Safely evaluate a very small integer arithmetic expression.
@@ -448,8 +467,17 @@ class OpenHandsLLMClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
-        
-        for attempt in range(max_retries + 1):
+
+        schema_key = (schema_name or "").strip().upper()
+        schema_kind = (schema_name or "").strip().lower()
+        env_retry_override = _read_env_int(
+            f"LLM_{schema_key}_JSON_RETRIES",
+            minimum=0,
+            maximum=10,
+        )
+        effective_max_retries = env_retry_override if env_retry_override is not None else max_retries
+
+        for attempt in range(effective_max_retries + 1):
             try:
                 # Call LiteLLM
                 import litellm
@@ -464,9 +492,28 @@ class OpenHandsLLMClient:
                 # Only log retry attempts, not every call
                 pass  # Removed verbose kwargs logging
 
+                request_kwargs = dict(self.llm_kwargs)
+                schema_timeout = _read_env_int(
+                    f"LLM_{schema_key}_TIMEOUT",
+                    minimum=1,
+                    maximum=3600,
+                )
+                if schema_timeout is not None:
+                    request_kwargs["timeout"] = schema_timeout
+                schema_max_tokens = _read_env_int(
+                    f"LLM_{schema_key}_MAX_TOKENS",
+                    minimum=64,
+                    maximum=131072,
+                )
+                if schema_max_tokens is not None:
+                    request_kwargs["max_tokens"] = schema_max_tokens
+                if schema_kind == "generate" and self.model.startswith("ollama/"):
+                    # Ollama's native JSON mode reduces malformed responses.
+                    request_kwargs.setdefault("format", "json")
+
                 response = litellm.completion(
                     messages=messages,
-                    **self.llm_kwargs
+                    **request_kwargs
                 )
 
                 # Extract content from response
@@ -479,8 +526,11 @@ class OpenHandsLLMClient:
 
                 # Debug: log empty responses
                 if not content or content.strip() == "":
-                    print(f"  Warning: Empty response from LLM (attempt {attempt + 1}/{max_retries + 1})")
-                    if attempt < max_retries:
+                    print(
+                        f"  Warning: Empty response from LLM "
+                        f"(attempt {attempt + 1}/{effective_max_retries + 1})"
+                    )
+                    if attempt < effective_max_retries:
                         continue
                     else:
                         raise RuntimeError("LLM returned empty response after all retries")
@@ -584,7 +634,7 @@ class OpenHandsLLMClient:
                 error_msg = str(e).split(':')[0] if ':' in str(e) else str(e)
                 print(f"  ⚠ JSON parse error: {error_msg[:60]}")
                 
-                if attempt < max_retries:
+                if attempt < effective_max_retries:
                     # Try to repair JSON
                     repair_prompt = (
                         f"The previous response was not valid JSON. "
@@ -598,7 +648,7 @@ class OpenHandsLLMClient:
                     ]
                 else:
                     raise RuntimeError(
-                        f"Failed to parse JSON response after {max_retries + 1} attempts. "
+                        f"Failed to parse JSON response after {effective_max_retries + 1} attempts. "
                         f"Last error: {str(e)}\n"
                         f"Problematic content: {content[:500]}"
                     ) from e
