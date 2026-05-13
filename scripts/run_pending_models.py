@@ -212,6 +212,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     # Validated L1 completions (2026-05-13): completed/staged in automatic batch.
     ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L1"),
     ("CVE-2022-4899_zstd", "glm-5.1", "L1"),
+    ("CVE-2023-39804_gnutar", "glm-5.1", "L1"),
 }
 
 # Guardrail note:
