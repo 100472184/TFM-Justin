@@ -220,6 +220,34 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-4899_zstd", "glm-5.1", "L1"),
     ("CVE-2023-39804_gnutar", "glm-5.1", "L1"),
     ("CVE-2024-57970_libarchive", "glm-5.1", "L1"),
+    ("CVE-2025-26623_exiv2", "glm-5.1", "L1"),
+    ("CVE-2025-49014_jq", "glm-5.1", "L1"),
+    # Validated L1 completions (2026-05-13): qwen3-coder-next.
+    ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L1"),
+    ("CVE-2016-9827_libming", "qwen3-coder-next", "L1"),
+    ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L1"),
+    ("CVE-2022-24724_cmark-gfm", "qwen3-coder-next", "L1"),
+    ("CVE-2022-4899_zstd", "qwen3-coder-next", "L1"),
+    ("CVE-2025-26623_exiv2", "qwen3-coder-next", "L1"),
+    ("CVE-2025-49014_jq", "qwen3-coder-next", "L1"),
+    # Validated L1 completions (2026-05-13): gpt-oss-20b.
+    ("CVE-2014-2525_libyaml", "gpt-oss-20b", "L1"),
+    ("CVE-2016-9827_libming", "gpt-oss-20b", "L1"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L1"),
+    ("CVE-2022-24724_cmark-gfm", "gpt-oss-20b", "L1"),
+    ("CVE-2022-4899_zstd", "gpt-oss-20b", "L1"),
+    ("CVE-2023-39804_gnutar", "gpt-oss-20b", "L1"),
+    ("CVE-2025-26623_exiv2", "gpt-oss-20b", "L1"),
+    ("CVE-2025-49014_jq", "gpt-oss-20b", "L1"),
+    # Validated L1 completions (2026-05-13): ministral-3-8b.
+    ("CVE-2014-2525_libyaml", "ministral-3-8b", "L1"),
+    ("CVE-2016-9827_libming", "ministral-3-8b", "L1"),
+    ("CVE-2021-32292_jsonc", "ministral-3-8b", "L1"),
+    ("CVE-2022-24724_cmark-gfm", "ministral-3-8b", "L1"),
+    ("CVE-2022-4899_zstd", "ministral-3-8b", "L1"),
+    ("CVE-2023-39804_gnutar", "ministral-3-8b", "L1"),
+    ("CVE-2025-26623_exiv2", "ministral-3-8b", "L1"),
+    ("CVE-2025-49014_jq", "ministral-3-8b", "L1"),
 }
 
 # Guardrail note:
