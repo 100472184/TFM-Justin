@@ -1349,8 +1349,16 @@ def run_pipeline(
         else:
             seed_preview = seed_hex
         
-        # GENERATE with validation retry loop (max 10 attempts)
-        max_generate_attempts = 10
+        # GENERATE with validation retry loop.
+        # Can be reduced via env to avoid long timeout amplification on unstable models/providers.
+        try:
+            max_generate_attempts = int(os.getenv("LLM_MAX_GENERATE_ATTEMPTS", "10"))
+        except Exception:
+            max_generate_attempts = 10
+        if max_generate_attempts < 1:
+            max_generate_attempts = 1
+        if max_generate_attempts > 10:
+            max_generate_attempts = 10
         failed_attempts = []
         new_seed = None
         mutations = None

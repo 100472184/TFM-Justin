@@ -300,3 +300,25 @@ Updated `scripts/run_pending_models.py` hardcoded baseline:
    - tighter mutation envelope for XML DTD/entity edits,
    - reduced retry/timeout amplification in `GENERATE`,
    - improved prompt constraints to minimize parser-only drift.
+
+## Update 2026-05-13 (Temporary Quarantine: CVE-2024-57970_libarchive)
+
+### Observed Runtime Pattern (glm-5.1, L1)
+1. Extended runs show repeated `GENERATE` request timeouts (Litellm/Ollama cloud) with high retry overhead.
+2. Iterations that do complete remain mostly parser-error/no-crash outcomes, with no useful vuln/fixed differential signal.
+3. Task already carries `ORACLE_BROKEN` warning, increasing risk of low-value campaign time consumption.
+
+### Operational Decision
+1. Apply **temporary CVE-level quarantine** in autoscheduler:
+   - `CVE-2024-57970_libarchive -> excluded-policy:temporary-quarantine-libarchive-2026-05-13`
+2. Scope:
+   - removed from automatic queue until oracle/guardrail conditions improve,
+   - still runnable manually for focused oracle work.
+
+### Throughput Safeguard Added
+1. For `ollama/*` combos in autoscript:
+   - effective `LLM_TIMEOUT=180`,
+   - effective `LLM_MAX_GENERATE_ATTEMPTS=3`.
+2. Goal:
+   - prevent timeout amplification (hours lost in a single low-signal combo),
+   - keep nightly batches progressing through other CVEs/models.

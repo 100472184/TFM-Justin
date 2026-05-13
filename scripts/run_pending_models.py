@@ -55,7 +55,8 @@ RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
 STATE_FILE = ".run_pending_models_state.json"
 DEFAULT_MAX_STAGE_FILE_MB = 90
 LOCAL_ENV_FILENAME = ".env.local"
-OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC = "300"
+OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC = "180"
+OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS = "3"
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
@@ -232,6 +233,10 @@ EXCLUDED_CVES: dict[str, str] = {
     # L1 campaign with glm-5.1 shows prolonged low-signal progress with repeated
     # generate timeouts and parser-only failures; defer until dedicated guardrails.
     "CVE-2023-29469_libxml2": "excluded-policy:temporary-quarantine-libxml2-2026-05-13",
+    # Temporary quarantine (2026-05-13):
+    # ORACLE_BROKEN + repeated generate timeouts in L1 campaigns are blocking
+    # queue throughput without producing differential signal.
+    "CVE-2024-57970_libarchive": "excluded-policy:temporary-quarantine-libarchive-2026-05-13",
 }
 
 # Service overrides by (CVE, level). These are methodological controls where a
@@ -1246,6 +1251,10 @@ def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[
         if effective_timeout != OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC:
             env["LLM_TIMEOUT"] = OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC
             sanitized.append(f"LLM_TIMEOUT={OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC}")
+        effective_attempts = env.get("LLM_MAX_GENERATE_ATTEMPTS", "").strip()
+        if effective_attempts != OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS:
+            env["LLM_MAX_GENERATE_ATTEMPTS"] = OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS
+            sanitized.append(f"LLM_MAX_GENERATE_ATTEMPTS={OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS}")
 
     # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by
     # stale global LLM_BASE_URL from shell/session.
