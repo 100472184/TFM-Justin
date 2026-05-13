@@ -60,6 +60,7 @@ OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS = "3"
 OLLAMA_EFFECTIVE_GENERATE_TIMEOUT_SEC = "90"
 OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS = "1600"
 OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES = "0"
+OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON = "0"
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
@@ -1271,6 +1272,10 @@ def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[
         if effective_generate_json_retries != OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES:
             env["LLM_GENERATE_JSON_RETRIES"] = OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES
             sanitized.append(f"LLM_GENERATE_JSON_RETRIES={OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES}")
+        effective_generate_format_json = env.get("OLLAMA_GENERATE_FORMAT_JSON", "").strip()
+        if effective_generate_format_json != OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON:
+            env["OLLAMA_GENERATE_FORMAT_JSON"] = OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON
+            sanitized.append(f"OLLAMA_GENERATE_FORMAT_JSON={OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON}")
 
     # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by
     # stale global LLM_BASE_URL from shell/session.

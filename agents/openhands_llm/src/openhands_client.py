@@ -24,6 +24,19 @@ def _read_env_int(name: str, minimum: int | None = None, maximum: int | None = N
     return value
 
 
+def _read_env_bool(name: str, default: bool = False) -> bool:
+    """Read boolean env var values like 1/true/yes/on and 0/false/no/off."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def _safe_eval_int_expr(expr: str) -> int | None:
     """
     Safely evaluate a very small integer arithmetic expression.
@@ -507,8 +520,13 @@ class OpenHandsLLMClient:
                 )
                 if schema_max_tokens is not None:
                     request_kwargs["max_tokens"] = schema_max_tokens
-                if schema_kind == "generate" and self.model.startswith("ollama/"):
-                    # Ollama's native JSON mode reduces malformed responses.
+                use_ollama_generate_json_mode = (
+                    schema_kind == "generate"
+                    and self.model.startswith("ollama/")
+                    and _read_env_bool("OLLAMA_GENERATE_FORMAT_JSON", default=False)
+                )
+                if use_ollama_generate_json_mode:
+                    # Optional: enable only when explicitly requested.
                     request_kwargs.setdefault("format", "json")
 
                 response = litellm.completion(
@@ -526,6 +544,31 @@ class OpenHandsLLMClient:
 
                 # Debug: log empty responses
                 if not content or content.strip() == "":
+                    # Some Ollama models can return empty/whitespace in JSON mode.
+                    # If enabled, do a one-shot fallback without format=json.
+                    if use_ollama_generate_json_mode and request_kwargs.get("format") == "json":
+                        fallback_kwargs = dict(request_kwargs)
+                        fallback_kwargs.pop("format", None)
+                        fallback_messages = [
+                            {
+                                "role": "system",
+                                "content": (
+                                    f"{system_prompt}\n"
+                                    "Return exactly one valid JSON object. "
+                                    "No markdown. No code fences. No prose."
+                                ),
+                            },
+                            {"role": "user", "content": user_prompt},
+                        ]
+                        fallback_response = litellm.completion(
+                            messages=fallback_messages,
+                            **fallback_kwargs,
+                        )
+                        fallback_content = fallback_response.choices[0].message.content
+                        if fallback_content and str(fallback_content).strip():
+                            content = str(fallback_content)
+                        else:
+                            content = ""
                     print(
                         f"  Warning: Empty response from LLM "
                         f"(attempt {attempt + 1}/{effective_max_retries + 1})"
