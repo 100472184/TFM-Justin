@@ -227,6 +227,10 @@ EXCLUDED_CVES: dict[str, str] = {
     # Reproduction is not reliable in the current setup/harness architecture.
     # See: runs/CVE-2016-5314_libtiff/reproduction_analysis.md
     "CVE-2016-5314_libtiff": "excluded-policy:reproduction-unreliable",
+    # Temporary quarantine (2026-05-13):
+    # L1 campaign with glm-5.1 shows prolonged low-signal progress with repeated
+    # generate timeouts and parser-only failures; defer until dedicated guardrails.
+    "CVE-2023-29469_libxml2": "excluded-policy:temporary-quarantine-libxml2-2026-05-13",
 }
 
 # Service overrides by (CVE, level). These are methodological controls where a

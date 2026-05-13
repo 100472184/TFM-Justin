@@ -275,3 +275,28 @@ Updated `scripts/run_pending_models.py` hardcoded baseline:
 5. Verdict:
    - this is **not normal progress** relative to the existing Gemini baseline for this CVE family,
    - it matches prior mistral drift signatures already observed in TAR tasks.
+
+## Update 2026-05-13 (Temporary Quarantine: CVE-2023-29469_libxml2)
+
+### Observed Runtime Pattern (glm-5.1, L1)
+1. Long overnight run consumed significant wall-clock time with low signal:
+   - repeated `GENERATE` upstream timeouts (`litellm.Timeout` at `300s`),
+   - many retries per iteration before receiving any payload,
+   - no vuln/fixed differential crash over extended iterations.
+2. Mutation quality drift remained high-noise:
+   - malformed XML constructs and parser-only failures dominated outcomes,
+   - frequent invalid mutation offsets / precheck failures,
+   - low proportion of semantically meaningful candidates for this CVE path.
+
+### Operational Decision
+1. **Temporary quarantine applied at CVE level** in `scripts/run_pending_models.py`:
+   - `CVE-2023-29469_libxml2 -> excluded-policy:temporary-quarantine-libxml2-2026-05-13`
+2. Scope:
+   - excluded from automatic scheduler queue for now (all model/level combinations),
+   - can still be run manually for targeted experiments.
+
+### Re-open Criteria
+1. Re-enable after guardrail hardening specific to this task:
+   - tighter mutation envelope for XML DTD/entity edits,
+   - reduced retry/timeout amplification in `GENERATE`,
+   - improved prompt constraints to minimize parser-only drift.
