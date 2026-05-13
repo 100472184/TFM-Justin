@@ -525,6 +525,11 @@ class OpenHandsLLMClient:
                     and self.model.startswith("ollama/")
                     and _read_env_bool("OLLAMA_GENERATE_FORMAT_JSON", default=False)
                 )
+                if schema_kind == "generate" and self.model.startswith("ollama/"):
+                    reasoning_effort = os.getenv("OLLAMA_GENERATE_REASONING_EFFORT", "").strip().lower()
+                    if reasoning_effort:
+                        # OpenAI-compatible field supported by Ollama /v1/chat/completions.
+                        request_kwargs.setdefault("reasoning_effort", reasoning_effort)
                 if use_ollama_generate_json_mode:
                     # Optional: enable only when explicitly requested.
                     request_kwargs.setdefault("format", "json")
