@@ -217,6 +217,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L1"),
     ("CVE-2022-4899_zstd", "glm-5.1", "L1"),
     ("CVE-2023-39804_gnutar", "glm-5.1", "L1"),
+    ("CVE-2024-57970_libarchive", "glm-5.1", "L1"),
 }
 
 # Guardrail note:
