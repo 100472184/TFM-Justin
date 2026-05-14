@@ -61,7 +61,13 @@ OLLAMA_EFFECTIVE_GENERATE_TIMEOUT_SEC = "90"
 OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS = "1600"
 OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES = "0"
 OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON = "0"
-OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT = "none"
+# IMPORTANT:
+# gpt-oss rejects think="none" on Ollama OpenAI-compatible endpoint.
+# Use "false" to disable thinking in a cross-model-safe way.
+OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT = "false"
+# gpt-oss on Ollama OpenAI-compatible endpoint is strict and expects effort
+# levels for "think" control in practice (low/medium/high/max), not "none".
+OLLAMA_GPT_OSS_EFFECTIVE_GENERATE_REASONING_EFFORT = "low"
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
@@ -1321,11 +1327,14 @@ def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[
         if effective_generate_format_json != OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON:
             env["OLLAMA_GENERATE_FORMAT_JSON"] = OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON
             sanitized.append(f"OLLAMA_GENERATE_FORMAT_JSON={OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON}")
+        desired_reasoning_effort = OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT
+        if "gpt-oss" in model_spec:
+            desired_reasoning_effort = OLLAMA_GPT_OSS_EFFECTIVE_GENERATE_REASONING_EFFORT
         effective_generate_reasoning_effort = env.get("OLLAMA_GENERATE_REASONING_EFFORT", "").strip().lower()
-        if effective_generate_reasoning_effort != OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT:
-            env["OLLAMA_GENERATE_REASONING_EFFORT"] = OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT
+        if effective_generate_reasoning_effort != desired_reasoning_effort:
+            env["OLLAMA_GENERATE_REASONING_EFFORT"] = desired_reasoning_effort
             sanitized.append(
-                f"OLLAMA_GENERATE_REASONING_EFFORT={OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT}"
+                f"OLLAMA_GENERATE_REASONING_EFFORT={desired_reasoning_effort}"
             )
 
     # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by

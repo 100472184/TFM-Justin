@@ -527,6 +527,14 @@ class OpenHandsLLMClient:
                 )
                 if schema_kind == "generate" and self.model.startswith("ollama/"):
                     reasoning_effort = os.getenv("OLLAMA_GENERATE_REASONING_EFFORT", "").strip().lower()
+                    # gpt-oss and some Ollama models reject "none" for think/reasoning.
+                    # Normalize to boolean-off value accepted by Ollama endpoint.
+                    if reasoning_effort == "none":
+                        reasoning_effort = "false"
+                    # Ollama cloud gpt-oss via OpenAI-compatible endpoint may reject
+                    # string "false" and prefers explicit effort levels.
+                    if "gpt-oss" in self.model and reasoning_effort in {"false", "off", "0", ""}:
+                        reasoning_effort = "low"
                     if reasoning_effort:
                         # OpenAI-compatible field supported by Ollama /v1/chat/completions.
                         request_kwargs.setdefault("reasoning_effort", reasoning_effort)
