@@ -56,10 +56,10 @@ STATE_FILE = ".run_pending_models_state.json"
 DEFAULT_MAX_STAGE_FILE_MB = 90
 LOCAL_ENV_FILENAME = ".env.local"
 OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC = "180"
-OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS = "3"
+OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS = "6"
 OLLAMA_EFFECTIVE_GENERATE_TIMEOUT_SEC = "90"
-OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS = "1600"
-OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES = "0"
+OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS = "2200"
+OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES = "2"
 OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON = "0"
 # IMPORTANT:
 # gpt-oss rejects think="none" on Ollama OpenAI-compatible endpoint.
@@ -67,7 +67,7 @@ OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON = "0"
 OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT = "low"
 # gpt-oss on Ollama OpenAI-compatible endpoint is strict and expects effort
 # levels for "think" control in practice (low/medium/high/max), not "none".
-OLLAMA_GPT_OSS_EFFECTIVE_GENERATE_REASONING_EFFORT = "low"
+OLLAMA_GPT_OSS_EFFECTIVE_GENERATE_REASONING_EFFORT = "medium"
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
