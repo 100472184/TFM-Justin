@@ -34,6 +34,8 @@ LEVEL_ITERS = {
 # - Keep model tags aligned with what `https://ollama.com/api/tags` returns for
 #   the current API key/account to avoid schedule-time hard failures.
 MODEL_SPECS = {
+    "gemini-3-flash-preview": "ollama/gemini-3-flash-preview",
+    "deepseek-v4-pro": "ollama/deepseek-v4-pro",
     "ministral-3-8b": "ollama/ministral-3:8b",
     "qwen3-coder-next": "ollama/qwen3-coder-next",
     "gpt-oss-20b": "ollama/gpt-oss:20b",
@@ -44,11 +46,23 @@ MODEL_SPECS = {
 # Heavier models first so we can front-load likely stronger performers.
 # Any alias added to MODEL_SPECS but not listed here is appended at the end.
 MODEL_ORDER = [
+    "gemini-3-flash-preview",
+    "deepseek-v4-pro",
     "glm-5.1",
     "qwen3-coder-next",
     "gpt-oss-20b",
     "ministral-3-8b",
 ]
+
+# Optional model-level scope controls.
+# If a model alias is present here, only listed levels are scheduled.
+# Any alias not present is allowed on all levels.
+MODEL_LEVEL_ALLOWLIST: dict[str, set[str]] = {
+    # New flagship baseline for full campaign sweep.
+    "gemini-3-flash-preview": {"L3", "L2", "L1", "L0"},
+    # Challenger reserved for higher-context/complex tracks.
+    "deepseek-v4-pro": {"L3", "L2"},
+}
 
 LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
 RUN_DIR_RE = re.compile(r"^\s*Run Dir:\s*(.+?)\s*$")
@@ -980,6 +994,9 @@ def combo_is_policy_excluded(combo: Combo) -> tuple[bool, str]:
     reason = EXCLUDED_CVES.get(combo.cve)
     if reason:
         return True, reason
+    allowed_levels = MODEL_LEVEL_ALLOWLIST.get(combo.model_alias)
+    if allowed_levels is not None and combo.level not in allowed_levels:
+        return True, f"excluded-policy:model-level-scope-{combo.model_alias}"
     return False, ""
 
 
