@@ -270,6 +270,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2025-49014_jq", "qwen3-coder-next", "L0"),
     ("CVE-2014-2525_libyaml", "gpt-oss-20b", "L0"),
     ("CVE-2016-9827_libming", "gpt-oss-20b", "L0"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L0"),
 }
 
 # Guardrail note:
