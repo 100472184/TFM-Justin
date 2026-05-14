@@ -72,13 +72,13 @@ LOCAL_ENV_FILENAME = ".env.local"
 OLLAMA_EFFECTIVE_LLM_TIMEOUT_SEC = "180"
 OLLAMA_EFFECTIVE_MAX_GENERATE_ATTEMPTS = "6"
 OLLAMA_EFFECTIVE_GENERATE_TIMEOUT_SEC = "90"
-OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS = "2200"
+OLLAMA_EFFECTIVE_GENERATE_MAX_TOKENS = "3200"
 OLLAMA_EFFECTIVE_GENERATE_JSON_RETRIES = "2"
-OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON = "0"
+OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON = "1"
 # IMPORTANT:
 # gpt-oss rejects think="none" on Ollama OpenAI-compatible endpoint.
 # Use "false" to disable thinking in a cross-model-safe way.
-OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT = "low"
+OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT = "medium"
 # gpt-oss on Ollama OpenAI-compatible endpoint is strict and expects effort
 # levels for "think" control in practice (low/medium/high/max), not "none".
 OLLAMA_GPT_OSS_EFFECTIVE_GENERATE_REASONING_EFFORT = "medium"
