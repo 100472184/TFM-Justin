@@ -1328,6 +1328,32 @@ def load_local_llm_env(repo_root: Path) -> tuple[dict[str, str], Path | None]:
     return _parse_local_env_file(env_file), env_file
 
 
+def _compact_sanitized_env_entries(entries: list[str]) -> list[str]:
+    """
+    Keep only the last effective value per KEY for `KEY=VALUE` entries while
+    preserving first-seen key order. Bare keys (without '=') are kept unique.
+    """
+    key_order: list[str] = []
+    key_values: dict[str, str] = {}
+    bare: list[str] = []
+    for item in entries:
+        if "=" in item:
+            key, value = item.split("=", 1)
+            key = key.strip()
+            if key and key not in key_values:
+                key_order.append(key)
+            if key:
+                key_values[key] = value
+            else:
+                bare.append(item)
+            continue
+        if item not in bare:
+            bare.append(item)
+    compacted = [f"{k}={key_values[k]}" for k in key_order]
+    compacted.extend(bare)
+    return compacted
+
+
 def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     env = os.environ.copy()
     for key, value in local_llm_env.items():
@@ -1394,7 +1420,7 @@ def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[
             if env.get(key):
                 env.pop(key, None)
                 sanitized.append(key)
-    return env, sanitized
+    return env, _compact_sanitized_env_entries(sanitized)
 
 
 def build_combos(
