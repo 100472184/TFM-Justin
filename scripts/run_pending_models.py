@@ -181,6 +181,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "gemini-3-flash-preview", "L3"),
     ("CVE-2016-9827_libming", "gemini-3-flash-preview", "L3"),
     ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L3"),
+    ("CVE-2022-24724_cmark-gfm", "gemini-3-flash-preview", "L3"),
     ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L3"),
     ("CVE-2022-24724_cmark-gfm", "qwen3-coder-next", "L3"),
     ("CVE-2022-24724_cmark-gfm", "gpt-oss-20b", "L3"),
