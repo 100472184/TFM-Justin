@@ -82,6 +82,20 @@ OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT = "low"
 # gpt-oss on Ollama OpenAI-compatible endpoint is strict and expects effort
 # levels for "think" control in practice (low/medium/high/max), not "none".
 OLLAMA_GPT_OSS_EFFECTIVE_GENERATE_REASONING_EFFORT = "medium"
+# Model-specific overrides for Ollama-compatible runs.
+# Rationale:
+# - Some preview/large models return malformed/truncated JSON more often in free-form mode.
+# - Enabling format=json and raising reasoning effort improves mutation JSON reliability.
+OLLAMA_MODEL_ENV_OVERRIDES: dict[str, dict[str, str]] = {
+    "ollama/gemini-3-flash-preview": {
+        "OLLAMA_GENERATE_FORMAT_JSON": "1",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "medium",
+    },
+    "ollama/deepseek-v4-pro": {
+        "OLLAMA_GENERATE_FORMAT_JSON": "1",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "medium",
+    },
+}
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
@@ -1354,6 +1368,13 @@ def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[
             sanitized.append(
                 f"OLLAMA_GENERATE_REASONING_EFFORT={desired_reasoning_effort}"
             )
+        # Apply model-specific overrides last so they take precedence over generic defaults.
+        per_model_overrides = OLLAMA_MODEL_ENV_OVERRIDES.get(model_spec, {})
+        for key, value in per_model_overrides.items():
+            effective_value = env.get(key, "").strip()
+            if effective_value != value:
+                env[key] = value
+                sanitized.append(f"{key}={value}")
 
     # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by
     # stale global LLM_BASE_URL from shell/session.
