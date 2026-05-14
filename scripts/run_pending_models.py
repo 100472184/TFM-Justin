@@ -159,6 +159,45 @@ SEED_OVERRIDE_BY_CVE_LEVEL: dict[tuple[str, str], dict[str, str]] = {
     },
 }
 
+# Legacy task-layout allowlist.
+# These CVEs are schedulable even without task.yml when they expose the minimal
+# pipeline bundle (compose + levels + seeds), typically from early campaigns.
+LEGACY_TASK_LAYOUT_ALLOWLIST: set[str] = {
+    "CVE-2024-4323_fluentbit",
+}
+
+# CVE-specific seed profiles (multi-seed-track scheduling).
+# For CVE-2024-4323 we preserve historical methodology split:
+# - seed_crash: legacy crash-oriented seed track (L0-L3)
+# - seed_new_op: neutral seed with newer mutation op behavior (L1-L3)
+CVE_SEED_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
+    "CVE-2024-4323_fluentbit": {
+        "seed_new_op": {
+            "dir": "seed (new op)",
+            "filename": "seed.json",
+            "sha256": "52ea254d9ecdf8d79f95bbb8cf3625ab977bd7906a5727e9103f529ac75ef3a8",
+            "levels": {"L1", "L2", "L3"},
+            "level_max_iters": {
+                "L1": 45,
+                "L2": 35,
+                "L3": 20,
+            },
+        },
+        "seed_crash": {
+            "dir": "seed_crash",
+            "filename": "seed_crash.json",
+            "sha256": "844a55ae67b34b1245b5ff298871b87568acbd5d17841d2faf463459e230b449",
+            "levels": {"L0", "L1", "L2", "L3"},
+            "level_max_iters": {
+                "L0": 60,
+                "L1": 30,
+                "L2": 20,
+                "L3": 10,
+            },
+        },
+    },
+}
+
 # Baseline hardcodeada a partir del estado analizado previamente.
 # Se usa para no depender de tener runs sincronizado en Kali.
 HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
@@ -349,6 +388,7 @@ class Combo:
     level: str
     max_iters: int
     model_spec: str
+    seed_profile: str = "default"
 
 
 @dataclass(frozen=True)
@@ -540,6 +580,41 @@ def _chunks(items: list[str], n: int) -> list[list[str]]:
     return [items[i : i + n] for i in range(0, len(items), n)]
 
 
+def _legacy_task_layout_enabled(cve: str) -> bool:
+    return cve in LEGACY_TASK_LAYOUT_ALLOWLIST
+
+
+def _task_has_legacy_min_layout(task_dir: Path) -> bool:
+    return (
+        (task_dir / "compose.yml").is_file()
+        and (task_dir / "levels").is_dir()
+        and (task_dir / "seeds").is_dir()
+    )
+
+
+def task_descriptor_exists(task_dir: Path) -> bool:
+    if (task_dir / "task.yml").is_file():
+        return True
+    cve = task_dir.name
+    if _legacy_task_layout_enabled(cve) and _task_has_legacy_min_layout(task_dir):
+        return True
+    return False
+
+
+def _seed_profile_cfg(cve: str, seed_profile: str) -> dict[str, Any] | None:
+    if seed_profile == "default":
+        return None
+    return CVE_SEED_PROFILES.get(cve, {}).get(seed_profile)
+
+
+def _seed_profile_dirname(cve: str, seed_profile: str) -> str | None:
+    cfg = _seed_profile_cfg(cve, seed_profile)
+    if not cfg:
+        return None
+    dirname = str(cfg.get("dir", "")).strip()
+    return dirname or seed_profile
+
+
 def stage_run_files_safely(
     repo_root: Path,
     run_path: Path,
@@ -602,8 +677,8 @@ def list_cves(runs_root: Path) -> list[str]:
     """Discover CVEs from both runs/ and tasks/ directories.
 
     On Kali the runs/ tree may not have all CVE dirs yet, so we also
-    scan tasks/ to pick up every CVE that has a valid task.yml
-    (excluding *_DISCARDED folders).
+    scan tasks/ to pick up every CVE that has a valid task descriptor
+    (task.yml or allowlisted legacy task layout), excluding *_DISCARDED.
     """
     cves: set[str] = set()
     tasks_root = runs_root.parent / "tasks"
@@ -611,7 +686,7 @@ def list_cves(runs_root: Path) -> list[str]:
     if runs_root.is_dir():
         for p in runs_root.iterdir():
             if p.is_dir() and p.name.startswith("CVE-"):
-                if tasks_root.is_dir() and (tasks_root / p.name / "task.yml").is_file():
+                if tasks_root.is_dir() and task_descriptor_exists(tasks_root / p.name):
                     cves.add(p.name)
     if tasks_root.is_dir():
         for p in tasks_root.iterdir():
@@ -619,7 +694,7 @@ def list_cves(runs_root: Path) -> list[str]:
                 p.is_dir()
                 and p.name.startswith("CVE-")
                 and "DISCARDED" not in p.name
-                and (p / "task.yml").is_file()
+                and task_descriptor_exists(p)
             ):
                 cves.add(p.name)
     return sorted(cves)
@@ -636,8 +711,18 @@ def read_summary_from_run_dir(run_dir: Path, cve: str) -> dict | None:
     return None
 
 
-def canonical_dest(runs_root: Path, cve: str, model_alias: str, level: str) -> Path:
-    return runs_root / cve / model_alias / f"{level}_{cve}"
+def canonical_dest(
+    runs_root: Path,
+    cve: str,
+    model_alias: str,
+    level: str,
+    seed_profile: str = "default",
+) -> Path:
+    model_dir = runs_root / cve / model_alias
+    profile_dir = _seed_profile_dirname(cve, seed_profile)
+    if profile_dir:
+        model_dir = model_dir / profile_dir
+    return model_dir / f"{level}_{cve}"
 
 
 def find_existing_level_run(
@@ -645,11 +730,15 @@ def find_existing_level_run(
     cve: str,
     model_alias: str,
     level: str,
+    seed_profile: str = "default",
     expected_model: str | None = None,
     expected_max_iters: int | None = None,
 ) -> tuple[bool, str]:
     model_dir = runs_root / cve / model_alias
-    dest = canonical_dest(runs_root, cve, model_alias, level)
+    profile_dir = _seed_profile_dirname(cve, seed_profile)
+    if profile_dir:
+        model_dir = model_dir / profile_dir
+    dest = canonical_dest(runs_root, cve, model_alias, level, seed_profile=seed_profile)
     if dest.is_dir():
         ok, why = validate_run_dir(
             dest,
@@ -885,7 +974,7 @@ def ensure_repo_state_clean_for_batch(repo_root: Path, execute: bool) -> None:
 
 
 def combo_key(combo: Combo) -> str:
-    return f"{combo.cve}|{combo.model_alias}|{combo.level}"
+    return f"{combo.cve}|{combo.model_alias}|{combo.level}|{combo.seed_profile}"
 
 
 def combo_in_hardcoded_baseline(combo: Combo) -> bool:
@@ -1109,6 +1198,7 @@ def update_combo_state(state: dict[str, Any], combo: Combo, status: str, detail:
         "model_alias": combo.model_alias,
         "model_spec": combo.model_spec,
         "level": combo.level,
+        "seed_profile": combo.seed_profile,
         "max_iters": combo.max_iters,
         "status": status,
         "detail": detail,
@@ -1117,7 +1207,7 @@ def update_combo_state(state: dict[str, Any], combo: Combo, status: str, detail:
 
 
 def task_exists(repo_root: Path, cve: str) -> bool:
-    return (repo_root / "tasks" / cve / "task.yml").is_file()
+    return task_descriptor_exists(repo_root / "tasks" / cve)
 
 
 def task_harness_exists(repo_root: Path, cve: str) -> tuple[bool, str]:
@@ -1130,6 +1220,10 @@ def task_harness_exists(repo_root: Path, cve: str) -> tuple[bool, str]:
     run_sh = task_dir / "harness" / "run.sh"
     if run_sh.is_file():
         return True, "harness/run.sh"
+
+    harness_sh = task_dir / "harness" / "harness.sh"
+    if harness_sh.is_file():
+        return True, "harness/harness.sh"
 
     task_yml = _read_text_if_exists(task_dir / "task.yml").lower()
     if "run:" in task_yml and "argv_template:" in task_yml:
@@ -1242,11 +1336,29 @@ def choose_seed_for_task(
     repo_root: Path,
     cve: str,
     level: str | None = None,
+    seed_profile: str = "default",
     auto_generate: bool = False,
 ) -> tuple[Path | None, str]:
     seeds_dir = repo_root / "tasks" / cve / "seeds"
     if not seeds_dir.is_dir():
         return None, "seed-dir-missing"
+
+    profile_cfg = _seed_profile_cfg(cve, seed_profile)
+    if profile_cfg:
+        override_name = str(profile_cfg.get("filename", "")).strip()
+        override_sha = str(profile_cfg.get("sha256", "")).strip().lower()
+        override_path = seeds_dir / override_name
+        if not override_path.is_file():
+            return None, f"seed-profile-missing:{seed_profile}:{override_name}"
+        ok_profile, lock_reason_profile = _validate_seed_expected(
+            override_path, override_name, override_sha
+        )
+        if not ok_profile:
+            return None, f"seed-selected:{override_name}({lock_reason_profile})"
+        return (
+            override_path,
+            f"seed-selected:{override_name}({lock_reason_profile})(seed-profile:{seed_profile})",
+        )
 
     if level:
         override = SEED_OVERRIDE_BY_CVE_LEVEL.get((cve, level))
@@ -1450,15 +1562,35 @@ def build_combos(
     for level in levels:
         for model_alias in models:
             for cve in selected_cves:
-                combos.append(
-                    Combo(
-                        cve=cve,
-                        model_alias=model_alias,
-                        level=level,
-                        max_iters=LEVEL_ITERS[level],
-                        model_spec=MODEL_SPECS[model_alias],
+                seed_profiles = CVE_SEED_PROFILES.get(cve)
+                if not seed_profiles:
+                    combos.append(
+                        Combo(
+                            cve=cve,
+                            model_alias=model_alias,
+                            level=level,
+                            max_iters=LEVEL_ITERS[level],
+                            model_spec=MODEL_SPECS[model_alias],
+                        )
                     )
-                )
+                    continue
+
+                for seed_profile, cfg in seed_profiles.items():
+                    allowed_levels = set(cfg.get("levels", set(LEVEL_ORDER)))
+                    if level not in allowed_levels:
+                        continue
+                    profile_level_iters = cfg.get("level_max_iters", {})
+                    max_iters = int(profile_level_iters.get(level, LEVEL_ITERS[level]))
+                    combos.append(
+                        Combo(
+                            cve=cve,
+                            model_alias=model_alias,
+                            level=level,
+                            max_iters=max_iters,
+                            model_spec=MODEL_SPECS[model_alias],
+                            seed_profile=seed_profile,
+                        )
+                    )
     return combos, unknown
 
 
@@ -1519,6 +1651,7 @@ def main() -> int:
             combo.cve,
             combo.model_alias,
             combo.level,
+            seed_profile=combo.seed_profile,
             expected_model=combo.model_spec,
             expected_max_iters=combo.max_iters,
         )
@@ -1559,17 +1692,23 @@ def main() -> int:
 
     for combo in pending:
         model_dir = runs_root / combo.cve / combo.model_alias
-        dest = canonical_dest(runs_root, combo.cve, combo.model_alias, combo.level)
+        dest = canonical_dest(
+            runs_root, combo.cve, combo.model_alias, combo.level, seed_profile=combo.seed_profile
+        )
         source_existed_before = False
         log(
             f"Pendiente -> CVE={combo.cve} model={combo.model_alias} "
-            f"level={combo.level} max_iters={combo.max_iters}"
+            f"level={combo.level} max_iters={combo.max_iters} seed_profile={combo.seed_profile}"
         )
 
         if dry_run:
             log(f"DRY-RUN plan: run + rename -> {dest}")
             seed_path, seed_reason = choose_seed_for_task(
-                repo_root, combo.cve, combo.level, auto_generate=False
+                repo_root,
+                combo.cve,
+                combo.level,
+                seed_profile=combo.seed_profile,
+                auto_generate=False,
             )
             seed_fragment = f" --seed {seed_path}" if seed_path else ""
             service = resolve_service_for_combo(combo)
@@ -1592,7 +1731,10 @@ def main() -> int:
             continue
 
         if not task_exists(repo_root, combo.cve):
-            msg = f"task-missing: tasks/{combo.cve}/task.yml"
+            msg = (
+                f"task-missing: tasks/{combo.cve}/task.yml "
+                f"(or legacy compose+levels+seeds bundle)"
+            )
             failed.append((combo, msg))
             update_combo_state(state, combo, "failed", msg)
             save_state(state_path, state)
@@ -1610,7 +1752,11 @@ def main() -> int:
             log(f"INFO harness-detected:{harness_probe} para {combo.cve}")
 
         seed_path, seed_reason = choose_seed_for_task(
-            repo_root, combo.cve, combo.level, auto_generate=True
+            repo_root,
+            combo.cve,
+            combo.level,
+            seed_profile=combo.seed_profile,
+            auto_generate=True,
         )
         if seed_path is None:
             msg = f"{seed_reason}: tasks/{combo.cve}/seeds"
@@ -1621,6 +1767,7 @@ def main() -> int:
             continue
 
         model_dir.mkdir(parents=True, exist_ok=True)
+        dest.parent.mkdir(parents=True, exist_ok=True)
         before_dirs = {p.name for p in model_dir.iterdir() if p.is_dir()}
         source_existed_before = dest.name in before_dirs
 
@@ -1860,31 +2007,37 @@ def main() -> int:
     if executed_ok:
         print(f"\nCompletadas y staged ({len(executed_ok)}):")
         for combo in executed_ok:
-            dest = canonical_dest(runs_root, combo.cve, combo.model_alias, combo.level)
+            dest = canonical_dest(
+                runs_root,
+                combo.cve,
+                combo.model_alias,
+                combo.level,
+                seed_profile=combo.seed_profile,
+            )
             rel = dest.relative_to(repo_root).as_posix() if safe_relative_to(dest, repo_root) else str(dest)
             print(f"  ✔ {combo.cve} {combo.model_alias} {combo.level} -> {rel}")
 
     if existing:
         print(f"\nYa existentes (muestra):")
         for combo, reason in existing[:12]:
-            print(f"- {combo.cve} {combo.model_alias} {combo.level} [{reason}]")
+            print(f"- {combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) [{reason}]")
         if len(existing) > 12:
             print(f"- ... ({len(existing) - 12} mas)")
 
     if skipped:
         print("\nOmitidas:")
         for combo, reason in skipped:
-            print(f"- {combo.cve} {combo.model_alias} {combo.level} [{reason}]")
+            print(f"- {combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) [{reason}]")
 
     if anomalous:
         print("\nAnomalas (revisar antes de commit):")
         for combo, codes, rel in anomalous:
-            print(f"- {combo.cve} {combo.model_alias} {combo.level} [{','.join(codes)}] -> {rel}")
+            print(f"- {combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) [{','.join(codes)}] -> {rel}")
 
     if failed:
         print("\nFallidas:")
         for combo, reason in failed:
-            print(f"- {combo.cve} {combo.model_alias} {combo.level} [{reason}]")
+            print(f"- {combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) [{reason}]")
 
     if dry_run:
         print("\nComandos finales (dry-run):")
