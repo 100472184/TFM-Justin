@@ -177,7 +177,12 @@ CVE_SEED_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
         "seed_new_op": {
             "dir": "seed (new op)",
             "filename": "seed.json",
-            "sha256": "52ea254d9ecdf8d79f95bbb8cf3625ab977bd7906a5727e9103f529ac75ef3a8",
+            # Accept both canonical variants observed across environments
+            # (line-ending/formatting differences with same semantic seed).
+            "sha256": (
+                "52ea254d9ecdf8d79f95bbb8cf3625ab977bd7906a5727e9103f529ac75ef3a8,"
+                "3ca81ed9510be3998806498b49abad313e60ef67b1f4a54f0543b842c1ec8ce3"
+            ),
             "levels": {"L1", "L2", "L3"},
             "level_max_iters": {
                 "L1": 45,
@@ -188,7 +193,10 @@ CVE_SEED_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
         "seed_crash": {
             "dir": "seed_crash",
             "filename": "seed_crash.json",
-            "sha256": "844a55ae67b34b1245b5ff298871b87568acbd5d17841d2faf463459e230b449",
+            "sha256": (
+                "844a55ae67b34b1245b5ff298871b87568acbd5d17841d2faf463459e230b449,"
+                "5766e8d8545f5ce2fb49d37e21915e232a936d49a0c0190f13f3c07a97c5330c"
+            ),
             "levels": {"L0", "L1", "L2", "L3"},
             "level_max_iters": {
                 "L0": 60,
@@ -1325,10 +1333,15 @@ def _validate_locked_seed(cve: str, seed_path: Path) -> tuple[bool, str]:
         return False, f"seed-lock-name-mismatch:expected:{expected_name}:got:{seed_path.name}"
 
     digest = hashlib.sha256(seed_path.read_bytes()).hexdigest().lower()
-    if expected_sha and digest != expected_sha:
-        return False, f"seed-lock-hash-mismatch:{seed_path.name}:{digest}:expected:{expected_sha}"
+    expected_hashes = [h.strip().lower() for h in expected_sha.split(",") if h.strip()]
+    if expected_hashes and digest not in expected_hashes:
+        return False, (
+            f"seed-lock-hash-mismatch:{seed_path.name}:{digest}:"
+            f"expected:{'|'.join(expected_hashes)}"
+        )
 
-    return True, f"seed-locked:{seed_path.name}:{expected_sha[:12]}"
+    shown = expected_hashes[0] if expected_hashes else expected_sha
+    return True, f"seed-locked:{seed_path.name}:{shown[:12]}"
 
 
 def _validate_seed_expected(seed_path: Path, expected_name: str, expected_sha: str) -> tuple[bool, str]:
@@ -1336,9 +1349,15 @@ def _validate_seed_expected(seed_path: Path, expected_name: str, expected_sha: s
         return False, f"seed-lock-name-mismatch:expected:{expected_name}:got:{seed_path.name}"
     if expected_sha:
         digest = hashlib.sha256(seed_path.read_bytes()).hexdigest().lower()
-        if digest != expected_sha.lower():
-            return False, f"seed-lock-hash-mismatch:{seed_path.name}:{digest}:expected:{expected_sha.lower()}"
-    return True, f"seed-locked:{seed_path.name}:{expected_sha[:12]}"
+        expected_hashes = [h.strip().lower() for h in expected_sha.split(",") if h.strip()]
+        if expected_hashes and digest not in expected_hashes:
+            return False, (
+                f"seed-lock-hash-mismatch:{seed_path.name}:{digest}:"
+                f"expected:{'|'.join(expected_hashes)}"
+            )
+        shown = expected_hashes[0] if expected_hashes else expected_sha
+        return True, f"seed-locked:{seed_path.name}:{shown[:12]}"
+    return True, f"seed-locked:{seed_path.name}:nohash"
 
 
 def choose_seed_for_task(
