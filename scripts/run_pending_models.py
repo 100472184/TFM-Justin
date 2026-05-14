@@ -64,7 +64,7 @@ OLLAMA_EFFECTIVE_GENERATE_FORMAT_JSON = "0"
 # IMPORTANT:
 # gpt-oss rejects think="none" on Ollama OpenAI-compatible endpoint.
 # Use "false" to disable thinking in a cross-model-safe way.
-OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT = "false"
+OLLAMA_EFFECTIVE_GENERATE_REASONING_EFFORT = "low"
 # gpt-oss on Ollama OpenAI-compatible endpoint is strict and expects effort
 # levels for "think" control in practice (low/medium/high/max), not "none".
 OLLAMA_GPT_OSS_EFFECTIVE_GENERATE_REASONING_EFFORT = "low"
