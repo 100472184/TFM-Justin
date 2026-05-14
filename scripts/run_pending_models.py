@@ -1717,8 +1717,20 @@ def main() -> int:
     failed: list[tuple[Combo, str]] = []
     skipped: list[tuple[Combo, str]] = []
     anomalous: list[tuple[Combo, list[str], str]] = []
+    blocked_cves_runtime: dict[str, str] = {}
 
     for combo in pending:
+        if combo.cve in blocked_cves_runtime:
+            reason = f"runtime-cve-blocked:{blocked_cves_runtime[combo.cve]}"
+            skipped.append((combo, reason))
+            update_combo_state(state, combo, "skipped", reason)
+            save_state(state_path, state)
+            log(
+                f"SKIP {combo.cve} {combo.model_alias} {combo.level} "
+                f"({combo.seed_profile}) por bloqueo runtime del CVE: {blocked_cves_runtime[combo.cve]}"
+            )
+            continue
+
         model_dir = runs_root / combo.cve / combo.model_alias
         dest = canonical_dest(
             runs_root, combo.cve, combo.model_alias, combo.level, seed_profile=combo.seed_profile
@@ -1880,6 +1892,15 @@ def main() -> int:
             classified = classify_pipeline_failure(output)
             if classified:
                 msg = classified
+                # CVE-level hard blocker in this session:
+                # if Docker image build fails for a task, retrying same CVE across
+                # seed profiles/models/levels is usually wasted time.
+                if classified in {"pipeline-build-failed", "pipeline-images-not-ready"}:
+                    blocked_cves_runtime[combo.cve] = classified
+                    log(
+                        f"WARNING runtime-cve-blocked:{combo.cve} "
+                        f"por fallo estructural ({classified}); se omiten sus combinaciones restantes."
+                    )
             else:
                 msg = f"cannot-resolve-run-dir:{src_reason}"
             failed.append((combo, msg))
