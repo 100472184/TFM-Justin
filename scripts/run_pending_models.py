@@ -90,6 +90,8 @@ OLLAMA_MODEL_ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "ollama/gemini-3-flash-preview": {
         "OLLAMA_GENERATE_FORMAT_JSON": "1",
         "OLLAMA_GENERATE_REASONING_EFFORT": "medium",
+        # Avoid frequent JSON truncation at ~2200 tokens in GENERATE.
+        "LLM_GENERATE_MAX_TOKENS": "3200",
     },
     "ollama/deepseek-v4-pro": {
         "OLLAMA_GENERATE_FORMAT_JSON": "1",
