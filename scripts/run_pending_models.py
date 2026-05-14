@@ -101,6 +101,20 @@ OLLAMA_MODEL_ENV_OVERRIDES: dict[str, dict[str, str]] = {
     },
 }
 
+# CVE+model targeted env overrides.
+# Use this map only for known hot spots where generic model defaults
+# regress a specific task.
+OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
+    # Exiv2 + deepseek can stall in long/thought-heavy GENERATE replies:
+    # repeated 3200-token truncation/empty payload loops and 90s timeouts.
+    # Keep JSON mode but reduce response verbosity and allow more wall-clock.
+    ("CVE-2025-26623_exiv2", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "2400",
+        "LLM_GENERATE_TIMEOUT": "150",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+    },
+}
+
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
 SEED_CANDIDATES_DEFAULT = [
@@ -238,6 +252,13 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L3"),
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L3"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L3"),
+    # Validated L3 completions (2026-05-15 interrupted batch, pass 1).
+    ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L3"),
+    ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L3"),
+    # CVE-2024-4323 has two seed profiles (seed_new_op / seed_crash).
+    # Hardcoding by (CVE, model, level) intentionally marks both as completed.
+    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L3"),
+    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L3"),
     ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L3"),
     ("CVE-2022-24724_cmark-gfm", "qwen3-coder-next", "L3"),
     ("CVE-2022-24724_cmark-gfm", "gpt-oss-20b", "L3"),
@@ -1495,7 +1516,12 @@ def _compact_sanitized_env_entries(entries: list[str]) -> list[str]:
     return compacted
 
 
-def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+def build_run_env(
+    model_spec: str,
+    local_llm_env: dict[str, str],
+    *,
+    cve: str | None = None,
+) -> tuple[dict[str, str], list[str]]:
     env = os.environ.copy()
     for key, value in local_llm_env.items():
         if key not in env or not env.get(key):
@@ -1548,6 +1574,13 @@ def build_run_env(model_spec: str, local_llm_env: dict[str, str]) -> tuple[dict[
             if effective_value != value:
                 env[key] = value
                 sanitized.append(f"{key}={value}")
+        if cve:
+            per_task_overrides = OLLAMA_CVE_MODEL_ENV_OVERRIDES.get((cve, model_spec), {})
+            for key, value in per_task_overrides.items():
+                effective_value = env.get(key, "").strip()
+                if effective_value != value:
+                    env[key] = value
+                    sanitized.append(f"{key}={value}")
 
     # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by
     # stale global LLM_BASE_URL from shell/session.
@@ -1761,7 +1794,7 @@ def main() -> int:
             log(f"DRY-RUN seed-policy: {seed_reason}")
             if service != "target-vuln":
                 log(f"DRY-RUN service-override: {combo.cve} {combo.level} -> {service}")
-            _, sanitized = build_run_env(combo.model_spec, local_llm_env)
+            _, sanitized = build_run_env(combo.model_spec, local_llm_env, cve=combo.cve)
             if sanitized:
                 log(f"DRY-RUN env-sanitize: {','.join(sanitized)}")
             log(f"DRY-RUN mv: <new_run_dir> -> {dest}")
@@ -1830,7 +1863,7 @@ def main() -> int:
             "--seed",
             str(seed_path),
         ]
-        run_env, sanitized_env = build_run_env(combo.model_spec, local_llm_env)
+        run_env, sanitized_env = build_run_env(combo.model_spec, local_llm_env, cve=combo.cve)
         if sanitized_env:
             log(f"INFO env sanitizado para {combo.model_spec}: {','.join(sanitized_env)}")
         log(f"INFO {seed_reason} para {combo.cve}")

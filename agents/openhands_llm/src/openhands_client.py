@@ -195,6 +195,21 @@ def _normalize_json_numeric_expressions(text: str) -> str:
     return "".join(out)
 
 
+def _compact_for_repair_prompt(text: str, max_chars: int = 1800) -> str:
+    """
+    Keep repair prompts bounded when the previous model output is huge.
+    This reduces secondary timeout risk during JSON-repair retries.
+    """
+    if text is None:
+        return ""
+    text = str(text)
+    if len(text) <= max_chars:
+        return text
+    head = max_chars // 2
+    tail = max_chars - head
+    return text[:head] + "\n...[truncated]...\n" + text[-tail:]
+
+
 def _strip_json_comments_safe(text: str) -> str:
     """Remove // and /* */ comments only when outside JSON strings."""
     out = []
@@ -696,13 +711,14 @@ class OpenHandsLLMClient:
                             f"(attempt {attempt + 1}/{effective_max_retries + 1})"
                         )
                         if attempt < effective_max_retries:
+                            compact_original = _compact_for_repair_prompt(content)
                             repair_prompt = (
                                 "The previous JSON was valid but unusable because it contains no mutations. "
                                 "Return valid JSON with at least ONE mutation operation. "
                                 "Use this schema: "
                                 "{\"mutations\":[{\"op\":\"...\"}],\"rationale\":\"...\"}. "
                                 "Do not return an empty list.\n"
-                                f"Original response:\n{content}"
+                                f"Original response:\n{compact_original}"
                             )
                             messages = [
                                 {
@@ -731,10 +747,11 @@ class OpenHandsLLMClient:
                         if isinstance(evaluated, (dict, list)):
                             if schema_kind == "generate" and not _has_generate_mutations(evaluated):
                                 if attempt < effective_max_retries:
+                                    compact_original = _compact_for_repair_prompt(content)
                                     repair_prompt = (
                                         "The previous response was parseable but has no mutations. "
                                         "Return valid JSON with at least one mutation in `mutations`.\n"
-                                        f"Original response:\n{content}"
+                                        f"Original response:\n{compact_original}"
                                     )
                                     messages = [
                                         {
@@ -763,11 +780,12 @@ class OpenHandsLLMClient:
                 
                 if attempt < effective_max_retries:
                     # Try to repair JSON
+                    compact_original = _compact_for_repair_prompt(content)
                     repair_prompt = (
                         f"The previous response was not valid JSON. "
                         f"Error: {str(e)}. "
                         f"Please provide ONLY valid JSON without any markdown formatting. "
-                        f"Original response:\n{content}"
+                        f"Original response:\n{compact_original}"
                     )
                     messages = [
                         {"role": "system", "content": "You must respond with valid JSON only."},

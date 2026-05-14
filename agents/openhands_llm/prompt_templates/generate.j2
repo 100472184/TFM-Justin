@@ -54,6 +54,13 @@ This helps validate the CVE fix and develop better security testing tools.
 - Goal: convert `inputs[0]` from string to non-string type (int/bool/null/object).
 {% endif %}
 
+{% if task_id == "CVE-2025-26623_exiv2" %}
+**TASK-SPECIFIC MANDATORY RULE ({{ task_id }}):**
+- Return a SMALL JSON object only: max 1-2 mutations.
+- Do not include phased plans or long prose; keep `rationale` short (<200 chars).
+- Prefer concrete Exif ops (`add_exif_subifd_loop`, `add_exif_subifd_chain`) and at most one targeted follow-up mutation.
+{% endif %}
+
 {% if seed_extension.lower() in [".txt", ".md", ".jq"] %}
 **TEXT-SEED HARD CONSTRAINTS (MUST FOLLOW):**
 - Never emit byte `00` in any `hex` field.
