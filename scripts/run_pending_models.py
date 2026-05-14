@@ -101,9 +101,22 @@ OLLAMA_MODEL_ENV_OVERRIDES: dict[str, dict[str, str]] = {
     },
 }
 
+# CVE-wide targeted env overrides (apply to all Ollama models for that task).
+# Use this map for task-level stabilization where model-specific tuning is not
+# required.
+OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
+    # libxml2 legacy task: reduce GENERATE drift and long strategy replies.
+    "CVE-2024-25062_libxml2": {
+        "LLM_GENERATE_MAX_TOKENS": "2400",
+        "LLM_GENERATE_TIMEOUT": "150",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "2",
+    },
+}
+
 # CVE+model targeted env overrides.
-# Use this map only for known hot spots where generic model defaults
-# regress a specific task.
+# Use this map only for hot spots where a task still needs per-model
+# specialization after generic CVE controls.
 OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
     # Exiv2 + deepseek can stall in long/thought-heavy GENERATE replies:
     # repeated 3200-token truncation/empty payload loops and 90s timeouts.
@@ -112,6 +125,8 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "LLM_GENERATE_MAX_TOKENS": "2400",
         "LLM_GENERATE_TIMEOUT": "150",
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        # Reduce prompt amplification loops after many failed iterations.
+        "LLM_GENERATE_HISTORY_WINDOW": "2",
     },
 }
 
@@ -180,6 +195,7 @@ SEED_OVERRIDE_BY_CVE_LEVEL: dict[tuple[str, str], dict[str, str]] = {
 # pipeline bundle (compose + levels + seeds), typically from early campaigns.
 LEGACY_TASK_LAYOUT_ALLOWLIST: set[str] = {
     "CVE-2024-4323_fluentbit",
+    "CVE-2024-25062_libxml2",
 }
 
 # CVE-specific seed profiles (multi-seed-track scheduling).
@@ -1205,6 +1221,135 @@ def detect_run_anomalies(output: str) -> list[str]:
     return anomalies
 
 
+def extract_generate_diagnostics(output: str) -> dict[str, int]:
+    """
+    Non-blocking diagnostics focused on ANALYZE/GENERATE quality so long batches
+    can be audited quickly without manually reading each run log.
+    """
+    text = (output or "").lower()
+    metrics: dict[str, int] = {
+        "empty_response_warnings": text.count("warning: empty response from llm"),
+        "json_parse_errors": text.count("json parse error"),
+        "generate_no_mutations": (
+            text.count("warning: generate payload has no mutations")
+            + text.count("no mutations proposed")
+        ),
+        "mutation_application_errors": text.count("mutation application error:"),
+        "llm_generation_failed": text.count("error: llm generation failed:"),
+        "llm_timeout_errors": (
+            text.count("litellm.timeout")
+            + text.count("connection timed out after")
+        ),
+        "generate_retry_attempts": len(re.findall(r"retry attempt \d+/\d+", text)),
+        "max_token_response_hits": 0,
+        "max_token_observed": 0,
+    }
+
+    token_matches = re.findall(r"llm responded \((\d+)\s+tokens\)", text)
+    if token_matches:
+        token_vals = []
+        for raw in token_matches:
+            try:
+                token_vals.append(int(raw))
+            except ValueError:
+                continue
+        if token_vals:
+            max_tok = max(token_vals)
+            metrics["max_token_observed"] = max_tok
+            if max_tok >= 1800:
+                metrics["max_token_response_hits"] = sum(1 for v in token_vals if v == max_tok)
+    return metrics
+
+
+def generate_diag_score(metrics: dict[str, int]) -> int:
+    """
+    Weighted score to rank combos by generate instability severity.
+    """
+    return (
+        metrics.get("empty_response_warnings", 0)
+        + metrics.get("json_parse_errors", 0)
+        + metrics.get("generate_no_mutations", 0)
+        + metrics.get("mutation_application_errors", 0) * 2
+        + metrics.get("llm_generation_failed", 0) * 3
+        + metrics.get("llm_timeout_errors", 0) * 3
+    )
+
+
+def has_generate_diag_signal(metrics: dict[str, int]) -> bool:
+    tracked = [
+        "empty_response_warnings",
+        "json_parse_errors",
+        "generate_no_mutations",
+        "mutation_application_errors",
+        "llm_generation_failed",
+        "llm_timeout_errors",
+        "generate_retry_attempts",
+    ]
+    return any(metrics.get(k, 0) > 0 for k in tracked)
+
+
+def write_generate_diagnostics_artifacts(
+    runs_root: Path,
+    session_id: str,
+    records: list[dict[str, Any]],
+    *,
+    inspected: int,
+    pending: int,
+    executed_ok: int,
+    failed: int,
+) -> tuple[Path, Path]:
+    json_path = runs_root / f"RUN_PENDING_MODELS_GENERATE_DIAGNOSTICS_{session_id}.json"
+    md_path = runs_root / f"RUN_PENDING_MODELS_GENERATE_DIAGNOSTICS_{session_id}.md"
+
+    payload = {
+        "session_id": session_id,
+        "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "summary": {
+            "inspected": inspected,
+            "pending": pending,
+            "executed_ok": executed_ok,
+            "failed": failed,
+            "combos_with_signal": len(records),
+        },
+        "records": records,
+    }
+    json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    lines: list[str] = [
+        "# Run Pending Models - Generate Diagnostics",
+        "",
+        f"- Session: `{session_id}`",
+        f"- Generated at: `{payload['generated_at']}`",
+        f"- Inspected combos: `{inspected}`",
+        f"- Pending combos: `{pending}`",
+        f"- Executed OK: `{executed_ok}`",
+        f"- Failed: `{failed}`",
+        f"- Combos with generate-signal: `{len(records)}`",
+        "",
+        "## Top Signals",
+    ]
+    if not records:
+        lines.append("- No generate instability signals detected in captured outputs.")
+    else:
+        ranked = sorted(records, key=lambda r: int(r.get("score", 0)), reverse=True)
+        for rec in ranked[:40]:
+            lines.append(
+                "- "
+                f"{rec['cve']} {rec['model_alias']} {rec['level']} ({rec['seed_profile']}): "
+                f"score={rec['score']}, "
+                f"empty={rec['metrics']['empty_response_warnings']}, "
+                f"json={rec['metrics']['json_parse_errors']}, "
+                f"no_mut={rec['metrics']['generate_no_mutations']}, "
+                f"gen_fail={rec['metrics']['llm_generation_failed']}, "
+                f"timeouts={rec['metrics']['llm_timeout_errors']}, "
+                f"retries={rec['metrics']['generate_retry_attempts']}, "
+                f"max_tok={rec['metrics']['max_token_observed']} "
+                f"(hits={rec['metrics']['max_token_response_hits']})"
+            )
+    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return json_path, md_path
+
+
 def normalize_run_anomalies(repo_root: Path, cve: str, anomalies: list[str], output: str) -> list[str]:
     """
     Reduce false-positive anomaly noise.
@@ -1567,7 +1712,7 @@ def build_run_env(
             sanitized.append(
                 f"OLLAMA_GENERATE_REASONING_EFFORT={desired_reasoning_effort}"
             )
-        # Apply model-specific overrides last so they take precedence over generic defaults.
+        # Apply model-specific overrides after generic defaults.
         per_model_overrides = OLLAMA_MODEL_ENV_OVERRIDES.get(model_spec, {})
         for key, value in per_model_overrides.items():
             effective_value = env.get(key, "").strip()
@@ -1575,6 +1720,12 @@ def build_run_env(
                 env[key] = value
                 sanitized.append(f"{key}={value}")
         if cve:
+            cve_overrides = OLLAMA_CVE_ENV_OVERRIDES.get(cve, {})
+            for key, value in cve_overrides.items():
+                effective_value = env.get(key, "").strip()
+                if effective_value != value:
+                    env[key] = value
+                    sanitized.append(f"{key}={value}")
             per_task_overrides = OLLAMA_CVE_MODEL_ENV_OVERRIDES.get((cve, model_spec), {})
             for key, value in per_task_overrides.items():
                 effective_value = env.get(key, "").strip()
@@ -1750,6 +1901,7 @@ def main() -> int:
     failed: list[tuple[Combo, str]] = []
     skipped: list[tuple[Combo, str]] = []
     anomalous: list[tuple[Combo, list[str], str]] = []
+    generate_diag_records: list[dict[str, Any]] = []
     blocked_cves_runtime: dict[str, str] = {}
 
     for combo in pending:
@@ -1889,6 +2041,28 @@ def main() -> int:
             log("Interrupcion manual detectada (Ctrl+C). Abortando batch de forma segura.")
             break
         output = run_res.output
+        generate_metrics = extract_generate_diagnostics(output)
+        if has_generate_diag_signal(generate_metrics):
+            score = generate_diag_score(generate_metrics)
+            generate_diag_records.append(
+                {
+                    "cve": combo.cve,
+                    "model_alias": combo.model_alias,
+                    "model_spec": combo.model_spec,
+                    "level": combo.level,
+                    "seed_profile": combo.seed_profile,
+                    "score": score,
+                    "metrics": generate_metrics,
+                }
+            )
+            log(
+                "WARNING generate-signal:"
+                f"{combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) "
+                f"score={score} empty={generate_metrics['empty_response_warnings']} "
+                f"json={generate_metrics['json_parse_errors']} "
+                f"gen_fail={generate_metrics['llm_generation_failed']} "
+                f"timeouts={generate_metrics['llm_timeout_errors']}"
+            )
         run_anomalies = normalize_run_anomalies(
             repo_root=repo_root,
             cve=combo.cve,
@@ -2120,6 +2294,41 @@ def main() -> int:
         print("\nFallidas:")
         for combo, reason in failed:
             print(f"- {combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) [{reason}]")
+
+    session_id = str(state.get("session_id", dt.datetime.now().strftime("%Y%m%d_%H%M%S")))
+    diag_json_path, diag_md_path = write_generate_diagnostics_artifacts(
+        runs_root,
+        session_id,
+        generate_diag_records,
+        inspected=len(combos),
+        pending=len(pending),
+        executed_ok=len(executed_ok),
+        failed=len(failed),
+    )
+    rel_diag_md = diag_md_path.relative_to(repo_root).as_posix() if safe_relative_to(diag_md_path, repo_root) else str(diag_md_path)
+    rel_diag_json = diag_json_path.relative_to(repo_root).as_posix() if safe_relative_to(diag_json_path, repo_root) else str(diag_json_path)
+    print("\nObservabilidad GENERATE:")
+    print(f"- Combos con senales: {len(generate_diag_records)}")
+    print(f"- Reporte MD: {rel_diag_md}")
+    print(f"- Reporte JSON: {rel_diag_json}")
+    if generate_diag_records:
+        print("- Top senales (score desc):")
+        ranked = sorted(generate_diag_records, key=lambda r: int(r.get("score", 0)), reverse=True)
+        for rec in ranked[:10]:
+            m = rec["metrics"]
+            print(
+                "  * "
+                f"{rec['cve']} {rec['model_alias']} {rec['level']} ({rec['seed_profile']}): "
+                f"score={rec['score']} "
+                f"empty={m['empty_response_warnings']} json={m['json_parse_errors']} "
+                f"no_mut={m['generate_no_mutations']} gen_fail={m['llm_generation_failed']} "
+                f"timeouts={m['llm_timeout_errors']}"
+            )
+    state["generate_diagnostics"] = {
+        "combos_with_signal": len(generate_diag_records),
+        "report_md": rel_diag_md,
+        "report_json": rel_diag_json,
+    }
 
     if dry_run:
         print("\nComandos finales (dry-run):")

@@ -1391,6 +1391,14 @@ def run_pipeline(
         generation: Any = {}
         mutation_success = False
         mutation_error = None
+        try:
+            generate_history_window = int(os.getenv("LLM_GENERATE_HISTORY_WINDOW", "3"))
+        except Exception:
+            generate_history_window = 3
+        if generate_history_window < 1:
+            generate_history_window = 1
+        if generate_history_window > 6:
+            generate_history_window = 6
         
         for attempt in range(1, max_generate_attempts + 1):
             # Build prompt with feedback from previous failures
@@ -1413,6 +1421,7 @@ def run_pipeline(
                 feedback_text += "\n⚠️ Generate DIFFERENT mutations that preserve valid seed structure.\n"
             
             generate_template = env.get_template("generate.j2")
+            recent_verify_history = verify_history[-generate_history_window:]
             generate_prompt = generate_template.render(
                 task_id=task_id,
                 context=context,
@@ -1421,7 +1430,7 @@ def run_pipeline(
                 seed_length=len(current_seed),
                 seed_extension=seed_extension,
                 iteration=iteration,
-                verify_history=verify_history[-3:],
+                verify_history=recent_verify_history,
                 tried_sizes=tried_sizes_str
             ) + feedback_text
             
