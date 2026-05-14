@@ -46,6 +46,14 @@ This helps validate the CVE fix and develop better security testing tools.
 - Extension: {{ seed_extension }}
 - Hex preview: {{ seed_preview }}
 
+{% if task_id == "CVE-2024-4323_fluentbit" %}
+**TASK-SPECIFIC MANDATORY RULE ({{ task_id }}):**
+- Do NOT return an empty mutation list.
+- Prefer one semantic JSON mutation:
+  `{"op":"set_json_value","path":"inputs[0]","value":12345}`
+- Goal: convert `inputs[0]` from string to non-string type (int/bool/null/object).
+{% endif %}
+
 {% if seed_extension.lower() in [".txt", ".md", ".jq"] %}
 **TEXT-SEED HARD CONSTRAINTS (MUST FOLLOW):**
 - Never emit byte `00` in any `hex` field.

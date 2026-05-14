@@ -670,6 +670,32 @@ def _precheck_mutations_for_seed(mutations: Any, seed_len: int, extension: str) 
     return None
 
 
+def _extract_mutations_from_generation(generation: Any) -> tuple[list[Any], str]:
+    """
+    Tolerant extraction of mutation arrays from heterogeneous model outputs.
+    """
+    if isinstance(generation, list):
+        return generation, "array"
+
+    if isinstance(generation, dict):
+        if isinstance(generation.get("mutations"), list):
+            return generation["mutations"], "mutations"
+
+        alias_keys = ("mutation", "ops", "operations", "changes", "edits", "payload")
+        for key in alias_keys:
+            candidate = generation.get(key)
+            if isinstance(candidate, list):
+                return candidate, key
+            if isinstance(candidate, dict) and candidate.get("op"):
+                return [candidate], f"{key}-single"
+
+        # Some models return a single mutation object instead of wrapping list.
+        if generation.get("op"):
+            return [generation], "single-object"
+
+    return [], "none"
+
+
 def validate_text_seed_structure(seed_bytes: bytes) -> tuple[bool, str]:
     """
     Validate text-like seeds used as CLI arguments.
@@ -1421,15 +1447,13 @@ def run_pipeline(
                     break
                 continue
             
-            # Handle both object and array responses
-            if isinstance(generation, list):
-                # LLM returned array directly instead of object
-                mutations = generation
+            # Handle object/array responses and common schema aliases.
+            mutations, extraction_source = _extract_mutations_from_generation(generation)
+            if extraction_source == "array":
                 print("  Warning: LLM returned array instead of object, using as mutations")
-            elif isinstance(generation, dict):
-                mutations = generation.get("mutations", [])
-            else:
-                mutations = []
+            elif extraction_source not in {"mutations", "none"}:
+                print(f"  Warning: using mutation key alias: {extraction_source}")
+            elif extraction_source == "none" and not isinstance(generation, (dict, list)):
                 print(f"  Warning: Unexpected generation type: {type(generation)}")
             
             if not mutations:

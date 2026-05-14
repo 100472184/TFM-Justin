@@ -375,6 +375,33 @@ def _escape_invalid_backslashes_in_strings(text: str) -> str:
     return "".join(out)
 
 
+def _has_generate_mutations(payload: object) -> bool:
+    """
+    Check whether a parsed GENERATE payload contains at least one mutation op.
+    """
+    if isinstance(payload, list):
+        return len(payload) > 0
+    if not isinstance(payload, dict):
+        return False
+
+    muts = payload.get("mutations")
+    if isinstance(muts, list) and len(muts) > 0:
+        return True
+
+    alias_keys = ("mutation", "ops", "operations", "changes", "edits", "payload")
+    for key in alias_keys:
+        candidate = payload.get(key)
+        if isinstance(candidate, list) and len(candidate) > 0:
+            return True
+        if isinstance(candidate, dict) and candidate.get("op"):
+            return True
+
+    if payload.get("op"):
+        return True
+
+    return False
+
+
 class OpenHandsLLMClient:
     """Wrapper around OpenHands SDK LLM for JSON completions."""
     
@@ -662,7 +689,33 @@ class OpenHandsLLMClient:
                     pass  # If regex fails, just proceed to json.loads
 
                 try:
-                    return json.loads(content)
+                    parsed = json.loads(content)
+                    if schema_kind == "generate" and not _has_generate_mutations(parsed):
+                        print(
+                            f"  Warning: Generate payload has no mutations "
+                            f"(attempt {attempt + 1}/{effective_max_retries + 1})"
+                        )
+                        if attempt < effective_max_retries:
+                            repair_prompt = (
+                                "The previous JSON was valid but unusable because it contains no mutations. "
+                                "Return valid JSON with at least ONE mutation operation. "
+                                "Use this schema: "
+                                "{\"mutations\":[{\"op\":\"...\"}],\"rationale\":\"...\"}. "
+                                "Do not return an empty list.\n"
+                                f"Original response:\n{content}"
+                            )
+                            messages = [
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "You must respond with valid JSON only and include at least one "
+                                        "mutation operation in `mutations`."
+                                    ),
+                                },
+                                {"role": "user", "content": repair_prompt},
+                            ]
+                            continue
+                    return parsed
                 except json.JSONDecodeError:
                     # Fallback: Try ast.literal_eval for Python-style dicts/lists
                     # This handles:
@@ -676,6 +729,24 @@ class OpenHandsLLMClient:
                         # It can handle basic Python literals which often matches what LLMs hallucinate
                         evaluated = ast.literal_eval(content)
                         if isinstance(evaluated, (dict, list)):
+                            if schema_kind == "generate" and not _has_generate_mutations(evaluated):
+                                if attempt < effective_max_retries:
+                                    repair_prompt = (
+                                        "The previous response was parseable but has no mutations. "
+                                        "Return valid JSON with at least one mutation in `mutations`.\n"
+                                        f"Original response:\n{content}"
+                                    )
+                                    messages = [
+                                        {
+                                            "role": "system",
+                                            "content": (
+                                                "You must respond with valid JSON only and include at least one "
+                                                "mutation operation in `mutations`."
+                                            ),
+                                        },
+                                        {"role": "user", "content": repair_prompt},
+                                    ]
+                                    continue
                             return evaluated
                     except (ValueError, SyntaxError):
                         # If ast fails too, then we truly have invalid data
