@@ -96,6 +96,8 @@ OLLAMA_MODEL_ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "ollama/deepseek-v4-pro": {
         "OLLAMA_GENERATE_FORMAT_JSON": "1",
         "OLLAMA_GENERATE_REASONING_EFFORT": "medium",
+        # Mirror Gemini stabilization for long JSON mutation payloads.
+        "LLM_GENERATE_MAX_TOKENS": "3200",
     },
 }
 
@@ -221,6 +223,13 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-9827_libming", "gemini-3-flash-preview", "L3"),
     ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L3"),
     ("CVE-2022-24724_cmark-gfm", "gemini-3-flash-preview", "L3"),
+    ("CVE-2022-4899_zstd", "gemini-3-flash-preview", "L3"),
+    ("CVE-2023-39804_gnutar", "gemini-3-flash-preview", "L3"),
+    ("CVE-2025-49014_jq", "gemini-3-flash-preview", "L3"),
+    # Validated L3 completions (2026-05-14): deepseek-v4-pro.
+    ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L3"),
+    ("CVE-2016-9827_libming", "deepseek-v4-pro", "L3"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L3"),
     ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L3"),
     ("CVE-2022-24724_cmark-gfm", "qwen3-coder-next", "L3"),
     ("CVE-2022-24724_cmark-gfm", "gpt-oss-20b", "L3"),
