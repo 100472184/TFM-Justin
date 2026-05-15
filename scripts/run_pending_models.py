@@ -105,6 +105,14 @@ OLLAMA_MODEL_ENV_OVERRIDES: dict[str, dict[str, str]] = {
 # Use this map for task-level stabilization where model-specific tuning is not
 # required.
 OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
+    # cmark-gfm: avoid repeated max-token (3200) empty payload loops in
+    # GENERATE; keep responses compact and predictable.
+    "CVE-2022-24724_cmark-gfm": {
+        "LLM_GENERATE_MAX_TOKENS": "2200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "2",
+    },
     # libxml2 legacy task: reduce GENERATE drift and long strategy replies.
     "CVE-2024-25062_libxml2": {
         "LLM_GENERATE_MAX_TOKENS": "1400",
@@ -127,6 +135,14 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
 # Use this map only for hot spots where a task still needs per-model
 # specialization after generic CVE controls.
 OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
+    # cmark-gfm + deepseek-v4-pro is especially prone to 3200-token empty
+    # responses/timeouts; force tighter outputs and a small history window.
+    ("CVE-2022-24724_cmark-gfm", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "1600",
+        "LLM_GENERATE_TIMEOUT": "150",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
     # Exiv2 + deepseek can stall in long/thought-heavy GENERATE replies:
     # repeated 3200-token truncation/empty payload loops and 90s timeouts.
     # Keep JSON mode but reduce response verbosity and allow more wall-clock.
@@ -283,6 +299,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     # Validated L3 completions (2026-05-15 interrupted batch, pass 1).
     ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L3"),
     ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L3"),
+    ("CVE-2024-57970_libarchive", "gemini-3-flash-preview", "L3"),
+    ("CVE-2024-57970_libarchive", "deepseek-v4-pro", "L3"),
     # CVE-2024-4323 has two seed profiles (seed_new_op / seed_crash).
     # Hardcoding by (CVE, model, level) intentionally marks both as completed.
     ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L3"),
@@ -329,6 +347,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L2"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L2"),
     ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L2"),
+    ("CVE-2024-57970_libarchive", "gemini-3-flash-preview", "L2"),
+    ("CVE-2024-57970_libarchive", "deepseek-v4-pro", "L2"),
     ("CVE-2014-2525_libyaml", "glm-5.1", "L2"),
     ("CVE-2016-9827_libming", "glm-5.1", "L2"),
     ("CVE-2021-32292_jsonc", "glm-5.1", "L2"),
@@ -365,6 +385,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2023-29469_libxml2", "ministral-3-8b", "L2"),
     ("CVE-2023-39804_gnutar", "ministral-3-8b", "L2"),
     ("CVE-2025-26623_exiv2", "ministral-3-8b", "L2"),
+    ("CVE-2025-49014_jq", "ministral-3-8b", "L2"),
     # Validated completion (2026-05-12): deterministic success at iter_001
     # with open-seed methodology for json-c (L1 track).
     ("CVE-2021-32292_jsonc", "glm-5.1", "L1"),
@@ -402,6 +423,10 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2025-49014_jq", "ministral-3-8b", "L1"),
     # Validated completion (2026-05-15): gemini-3-flash-preview L1.
     ("CVE-2022-4899_zstd", "gemini-3-flash-preview", "L1"),
+    ("CVE-2024-57970_libarchive", "gemini-3-flash-preview", "L1"),
+    ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L1"),
+    ("CVE-2016-9827_libming", "deepseek-v4-pro", "L1"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L1"),
     # Validated L0 completions (2026-05-14): staged runs verified by summary.json
     # validity policy (full-budget failures or success-early termination).
     ("CVE-2014-2525_libyaml", "glm-5.1", "L0"),
