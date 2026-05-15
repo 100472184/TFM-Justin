@@ -625,13 +625,10 @@ class OpenHandsLLMClient:
                 )
                 if schema_kind == "generate" and self.model.startswith("ollama/"):
                     reasoning_effort = os.getenv("OLLAMA_GENERATE_REASONING_EFFORT", "").strip().lower()
-                    # gpt-oss and some Ollama models reject "none" for think/reasoning.
-                    # Normalize to boolean-off value accepted by Ollama endpoint.
-                    if reasoning_effort == "none":
-                        reasoning_effort = "false"
                     # Ollama cloud gpt-oss via OpenAI-compatible endpoint may reject
-                    # string "false" and prefers explicit effort levels.
-                    if "gpt-oss" in self.model and reasoning_effort in {"false", "off", "0", ""}:
+                    # non-effort values and prefers explicit effort levels.
+                    # Keep "none" for non-gpt-oss models to disable thinking.
+                    if "gpt-oss" in self.model and reasoning_effort in {"false", "off", "0", "", "none"}:
                         reasoning_effort = "low"
                     if reasoning_effort:
                         # OpenAI-compatible field supported by Ollama /v1/chat/completions.
@@ -650,8 +647,22 @@ class OpenHandsLLMClient:
                 
                 # Brief token count for monitoring
                 usage = getattr(response, 'usage', None)
+                completion_tokens = None
                 if usage:
-                    print(f"  ✓ LLM responded ({usage.completion_tokens} tokens)")
+                    completion_tokens = getattr(usage, "completion_tokens", None)
+                    print(f"  ✓ LLM responded ({completion_tokens} tokens)")
+                max_tokens_limit = None
+                try:
+                    raw_max_tokens = request_kwargs.get("max_tokens")
+                    if raw_max_tokens is not None:
+                        max_tokens_limit = int(raw_max_tokens)
+                except Exception:
+                    max_tokens_limit = None
+                likely_token_capped_empty = (
+                    completion_tokens is not None
+                    and max_tokens_limit is not None
+                    and int(completion_tokens) >= int(max_tokens_limit)
+                )
 
                 # Debug: log empty responses
                 if not content or content.strip() == "":
@@ -680,6 +691,43 @@ class OpenHandsLLMClient:
                             content = str(fallback_content)
                         else:
                             content = ""
+                    # Thinking-capable Ollama models can spend the full
+                    # completion budget in hidden reasoning and emit empty
+                    # visible content. Before declaring empty, try one-shot
+                    # non-thinking fallback for GENERATE.
+                    if (
+                        (not content or not str(content).strip())
+                        and schema_kind == "generate"
+                        and self.model.startswith("ollama/")
+                    ):
+                        nonthink_kwargs = dict(request_kwargs)
+                        nonthink_kwargs["reasoning_effort"] = "none"
+                        reasoning_obj = nonthink_kwargs.get("reasoning")
+                        if isinstance(reasoning_obj, dict):
+                            reasoning_obj = dict(reasoning_obj)
+                        else:
+                            reasoning_obj = {}
+                        reasoning_obj["effort"] = "none"
+                        nonthink_kwargs["reasoning"] = reasoning_obj
+                        try:
+                            nonthink_response = litellm.completion(
+                                messages=fallback_messages if use_ollama_generate_json_mode else messages,
+                                **nonthink_kwargs,
+                            )
+                            nonthink_content = nonthink_response.choices[0].message.content
+                            if nonthink_content and str(nonthink_content).strip():
+                                content = str(nonthink_content)
+                            else:
+                                content = ""
+                        except Exception:
+                            # Keep baseline retry behavior if provider/model
+                            # rejects this fallback.
+                            pass
+                    if likely_token_capped_empty:
+                        print(
+                            f"  Note: empty response hit max_tokens={max_tokens_limit}; "
+                            "likely spent budget before final content."
+                        )
                     print(
                         f"  Warning: Empty response from LLM "
                         f"(attempt {attempt + 1}/{effective_max_retries + 1})"

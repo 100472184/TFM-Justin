@@ -136,11 +136,12 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
 # specialization after generic CVE controls.
 OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
     # cmark-gfm + deepseek-v4-pro is especially prone to 3200-token empty
-    # responses/timeouts; force tighter outputs and a small history window.
+    # responses/timeouts. Disable thinking explicitly and keep a compact
+    # history window to avoid long reflective loops.
     ("CVE-2022-24724_cmark-gfm", "ollama/deepseek-v4-pro"): {
-        "LLM_GENERATE_MAX_TOKENS": "1600",
+        "LLM_GENERATE_MAX_TOKENS": "2400",
         "LLM_GENERATE_TIMEOUT": "150",
-        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     # Exiv2 + deepseek can stall in long/thought-heavy GENERATE replies:
