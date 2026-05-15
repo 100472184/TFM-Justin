@@ -1505,7 +1505,34 @@ def run_pipeline(
                     "- If you modify include references, keep values as inc.xml/inc2.xml style.\n"
                     "- Do NOT corrupt <, >, <!DOCTYPE, </...>, xmlns:xi, or quote delimiters.\n"
                 )
-            
+            elif task_id == "CVE-2022-24724_cmark-gfm":
+                # Detect repeated no-progress signal (both builds exit cleanly)
+                # and explicitly steer the model toward boundary-crossing table
+                # constructions instead of small local edits.
+                no_diff_clean = 0
+                valid_pairs = 0
+                for vh in recent_verify_history:
+                    if not isinstance(vh, dict):
+                        continue
+                    if "vuln_exit_code" in vh and "fixed_exit_code" in vh:
+                        valid_pairs += 1
+                        if vh.get("vuln_exit_code") == 0 and vh.get("fixed_exit_code") == 0:
+                            no_diff_clean += 1
+                stalled = valid_pairs >= 2 and no_diff_clean == valid_pairs
+                generate_prompt += (
+                    "\n\nTASK-LOCAL RULES (CVE-2022-24724_cmark-gfm):\n"
+                    "- Keep Markdown table grammar valid (header + delimiter, optional body).\n"
+                    "- Use supported ops only; prefer structured text ops over random byte corruption.\n"
+                    "- Focus on column-cardinality pressure, not small cosmetic edits.\n"
+                )
+                if stalled:
+                    generate_prompt += (
+                        "- STALLED SIGNAL: recent iterations show vuln=0 and fixed=0.\n"
+                        "- Escalate now beyond UINT16_MAX: include at least one `insert_repeated_bytes`\n"
+                        "  mutation with `times >= 70000` targeting table cell patterns (`h|`, `---|`, `x|`).\n"
+                        "- Avoid tiny repeats (`times < 5000`) and overwrite-only plans in this attempt.\n"
+                    )
+
             if attempt > 1:
                 print(f"\n  Retry attempt {attempt}/{max_generate_attempts}")
             
