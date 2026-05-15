@@ -481,16 +481,8 @@ EXCLUDED_CVES: dict[str, str] = {
 }
 
 # Per-combo temporary exclusions.
-# Use for known anomalous partial runs we don't want to auto-repeat until a
-# clean rerun is explicitly requested.
-EXCLUDED_COMBOS: dict[tuple[str, str, str, str], str] = {
-    (
-        "CVE-2025-49014_jq",
-        "gemini-3-flash-preview",
-        "L0",
-        "default",
-    ): "excluded-policy:temporary-quarantine-combo-anomalous-2026-05-15",
-}
+# Keep empty unless a specific unstable combo must be paused temporarily.
+EXCLUDED_COMBOS: dict[tuple[str, str, str, str], str] = {}
 
 # Service overrides by (CVE, level). These are methodological controls where a
 # level intentionally targets a different harness/service.
