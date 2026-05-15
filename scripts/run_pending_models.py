@@ -422,6 +422,10 @@ EXCLUDED_CVES: dict[str, str] = {
     # ORACLE_BROKEN + repeated generate timeouts in L1 campaigns are blocking
     # queue throughput without producing differential signal.
     "CVE-2024-57970_libarchive": "excluded-policy:temporary-quarantine-libarchive-2026-05-13",
+    # Temporary quarantine (2026-05-15):
+    # High generate instability/noise for this legacy libxml2 track across models.
+    # Keep out of automatic scheduling until a dedicated, deterministic strategy is ready.
+    "CVE-2024-25062_libxml2": "excluded-policy:temporary-quarantine-libxml2-2026-05-15",
 }
 
 # Service overrides by (CVE, level). These are methodological controls where a
