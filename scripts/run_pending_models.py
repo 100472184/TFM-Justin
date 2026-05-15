@@ -60,8 +60,8 @@ MODEL_ORDER = [
 MODEL_LEVEL_ALLOWLIST: dict[str, set[str]] = {
     # New flagship baseline for full campaign sweep.
     "gemini-3-flash-preview": {"L3", "L2", "L1", "L0"},
-    # Challenger reserved for higher-context/complex tracks.
-    "deepseek-v4-pro": {"L3", "L2"},
+    # Enable full-level parity (L3-L0) for campaign completeness.
+    "deepseek-v4-pro": {"L3", "L2", "L1", "L0"},
 }
 
 LEVEL_ORDER = ["L3", "L2", "L1", "L0"]
@@ -111,6 +111,15 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # libarchive (ORACLE_BROKEN and prior generate instability):
+    # keep JSON compact and reduce long/thought-heavy responses that tend to
+    # produce malformed payloads.
+    "CVE-2024-57970_libarchive": {
+        "LLM_GENERATE_MAX_TOKENS": "2400",
+        "LLM_GENERATE_TIMEOUT": "150",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "2",
     },
 }
 
@@ -201,7 +210,7 @@ LEGACY_TASK_LAYOUT_ALLOWLIST: set[str] = {
 # CVE-specific seed profiles (multi-seed-track scheduling).
 # For CVE-2024-4323 we preserve historical methodology split:
 # - seed_crash: legacy crash-oriented seed track (L0-L3)
-# - seed_new_op: neutral seed with newer mutation op behavior (L1-L3)
+# - seed_new_op: neutral seed with newer mutation op behavior (L0-L3)
 CVE_SEED_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
     "CVE-2024-4323_fluentbit": {
         "seed_new_op": {
@@ -213,7 +222,7 @@ CVE_SEED_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
                 "52ea254d9ecdf8d79f95bbb8cf3625ab977bd7906a5727e9103f529ac75ef3a8,"
                 "3ca81ed9510be3998806498b49abad313e60ef67b1f4a54f0543b842c1ec8ce3"
             ),
-            "levels": {"L1", "L2", "L3"},
+            "levels": {"L0", "L1", "L2", "L3"},
             "level_max_iters": {
                 "L1": 45,
                 "L2": 35,
@@ -297,10 +306,6 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2023-39804_gnutar", "qwen3-coder-next", "L3"),
     ("CVE-2023-39804_gnutar", "gpt-oss-20b", "L3"),
     ("CVE-2023-39804_gnutar", "ministral-3-8b", "L3"),
-    ("CVE-2024-57970_libarchive", "glm-5.1", "L3"),
-    ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L3"),
-    ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L3"),
-    ("CVE-2024-57970_libarchive", "ministral-3-8b", "L3"),
     ("CVE-2025-26623_exiv2", "glm-5.1", "L3"),
     ("CVE-2025-26623_exiv2", "qwen3-coder-next", "L3"),
     ("CVE-2025-26623_exiv2", "gpt-oss-20b", "L3"),
@@ -330,7 +335,6 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L2"),
     ("CVE-2022-4899_zstd", "glm-5.1", "L2"),
     ("CVE-2023-39804_gnutar", "glm-5.1", "L2"),
-    ("CVE-2024-57970_libarchive", "glm-5.1", "L2"),
     ("CVE-2025-26623_exiv2", "glm-5.1", "L2"),
     ("CVE-2025-49014_jq", "glm-5.1", "L2"),
     ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L2"),
@@ -340,7 +344,6 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-24724_cmark-gfm", "qwen3-coder-next", "L2"),
     ("CVE-2022-4899_zstd", "qwen3-coder-next", "L2"),
     ("CVE-2023-39804_gnutar", "qwen3-coder-next", "L2"),
-    ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L2"),
     ("CVE-2025-26623_exiv2", "qwen3-coder-next", "L2"),
     ("CVE-2025-49014_jq", "qwen3-coder-next", "L2"),
     ("CVE-2014-2525_libyaml", "gpt-oss-20b", "L2"),
@@ -350,7 +353,6 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-4899_zstd", "gpt-oss-20b", "L2"),
     ("CVE-2023-29469_libxml2", "gpt-oss-20b", "L2"),
     ("CVE-2023-39804_gnutar", "gpt-oss-20b", "L2"),
-    ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L2"),
     ("CVE-2025-26623_exiv2", "gpt-oss-20b", "L2"),
     ("CVE-2025-49014_jq", "gpt-oss-20b", "L2"),
     ("CVE-2016-9827_libming", "ministral-3-8b", "L2"),
@@ -362,11 +364,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-4899_zstd", "ministral-3-8b", "L2"),
     ("CVE-2023-29469_libxml2", "ministral-3-8b", "L2"),
     ("CVE-2023-39804_gnutar", "ministral-3-8b", "L2"),
-    ("CVE-2024-57970_libarchive", "ministral-3-8b", "L2"),
     ("CVE-2025-26623_exiv2", "ministral-3-8b", "L2"),
-    # Quarantine: repeated low-signal jq compile-error drift and manual interruption.
-    # Keep out of automatic L2 queue until jq-specific guardrails are tightened.
-    ("CVE-2025-49014_jq", "ministral-3-8b", "L2"),
     # Validated completion (2026-05-12): deterministic success at iter_001
     # with open-seed methodology for json-c (L1 track).
     ("CVE-2021-32292_jsonc", "glm-5.1", "L1"),
@@ -374,7 +372,6 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L1"),
     ("CVE-2022-4899_zstd", "glm-5.1", "L1"),
     ("CVE-2023-39804_gnutar", "glm-5.1", "L1"),
-    ("CVE-2024-57970_libarchive", "glm-5.1", "L1"),
     ("CVE-2025-26623_exiv2", "glm-5.1", "L1"),
     ("CVE-2025-49014_jq", "glm-5.1", "L1"),
     # Validated L1 completions (2026-05-13): qwen3-coder-next.
@@ -477,14 +474,22 @@ EXCLUDED_CVES: dict[str, str] = {
     # L1 campaign with glm-5.1 shows prolonged low-signal progress with repeated
     # generate timeouts and parser-only failures; defer until dedicated guardrails.
     "CVE-2023-29469_libxml2": "excluded-policy:temporary-quarantine-libxml2-2026-05-13",
-    # Temporary quarantine (2026-05-13):
-    # ORACLE_BROKEN + repeated generate timeouts in L1 campaigns are blocking
-    # queue throughput without producing differential signal.
-    "CVE-2024-57970_libarchive": "excluded-policy:temporary-quarantine-libarchive-2026-05-13",
     # Temporary quarantine (2026-05-15):
     # High generate instability/noise for this legacy libxml2 track across models.
     # Keep out of automatic scheduling until a dedicated, deterministic strategy is ready.
     "CVE-2024-25062_libxml2": "excluded-policy:temporary-quarantine-libxml2-2026-05-15",
+}
+
+# Per-combo temporary exclusions.
+# Use for known anomalous partial runs we don't want to auto-repeat until a
+# clean rerun is explicitly requested.
+EXCLUDED_COMBOS: dict[tuple[str, str, str, str], str] = {
+    (
+        "CVE-2025-49014_jq",
+        "gemini-3-flash-preview",
+        "L0",
+        "default",
+    ): "excluded-policy:temporary-quarantine-combo-anomalous-2026-05-15",
 }
 
 # Service overrides by (CVE, level). These are methodological controls where a
@@ -1104,6 +1109,14 @@ def combo_key(combo: Combo) -> str:
 
 
 def combo_in_hardcoded_baseline(combo: Combo) -> bool:
+    # CVE-2024-4323 has two seed profiles. For L0, keep seed_new_op schedulable
+    # even if L0 is hardcoded from seed_crash completion.
+    if (
+        combo.cve == "CVE-2024-4323_fluentbit"
+        and combo.level == "L0"
+        and combo.seed_profile == "seed_new_op"
+    ):
+        return False
     return (combo.cve, combo.model_alias, combo.level) in HARDCODED_EXISTING_COMBOS
 
 
@@ -1227,6 +1240,9 @@ def hardcoded_baseline_alignment_stats() -> tuple[int, int]:
 
 
 def combo_is_policy_excluded(combo: Combo) -> tuple[bool, str]:
+    combo_reason = EXCLUDED_COMBOS.get((combo.cve, combo.model_alias, combo.level, combo.seed_profile))
+    if combo_reason:
+        return True, combo_reason
     reason = EXCLUDED_CVES.get(combo.cve)
     if reason:
         return True, reason
