@@ -429,6 +429,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L1"),
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L1"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L1"),
+    ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L1"),
     # Validated L0 completions (2026-05-14): staged runs verified by summary.json
     # validity policy (full-budget failures or success-early termination).
     ("CVE-2014-2525_libyaml", "glm-5.1", "L0"),
