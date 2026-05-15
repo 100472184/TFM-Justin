@@ -2,16 +2,17 @@
 """
 Docker readiness verification utilities.
 
-This module provides functions to verify that Docker images are fully ready
-after build. There is a timing issue where freshly built images don't respond
-immediately to docker run commands - they need several attempts before the
-container starts properly.
+This module verifies that Docker images are actually runnable after build.
+For legacy tasks without task.yml, it can infer entrypoint from compose.yml.
 """
 from __future__ import annotations
+
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+import yaml
 
 
 def verify_image_ready(
@@ -19,237 +20,223 @@ def verify_image_ready(
     entrypoint: str,
     args: list[str],
     max_attempts: int = 999,
-    retry_delay: float = 2.0
+    retry_delay: float = 2.0,
 ) -> tuple[bool, Optional[str]]:
     """
     Verify that a Docker image is ready by attempting to run it until it responds.
-    
-    After building images, Docker needs time to initialize (~0.8-1s per attempt).
-    This function retries docker run commands until the container responds with
-    output. Uses the EXACT logic validated in test_docker_ready.py:
-    - NO timeout on subprocess.run (let command finish naturally)
-    - Wait 2 seconds between attempts (validated optimal)
-    - Measure elapsed time per attempt
-    - Typically succeeds by attempt 2-3
-    
-    Args:
-        image_name: Full Docker image name (e.g., "cve-2024-57970_libarchive-target-vuln")
-        entrypoint: Entrypoint to override (e.g., "/opt/target/bin/bsdtar")
-        args: Arguments to pass to entrypoint (e.g., ["--version"])
-        max_attempts: Maximum number of retry attempts (default: 999, effectively infinite)
-        retry_delay: Seconds to wait between attempts (default: 2.0, validated optimal)
-    
-    Returns:
-        Tuple of (success: bool, output: Optional[str])
-        - success: True if container responded with non-empty output
-        - output: The stdout from successful run, or None if failed
-    
-    Example:
-        >>> success, output = verify_image_ready(
-        ...     "cve-2024-57970_libarchive-target-vuln",
-        ...     "/opt/target/bin/bsdtar",
-        ...     ["--version"]
-        ... )
-        >>> print(f"Image ready: {output}")
     """
     cmd = ["docker", "run", "--rm", "--entrypoint", entrypoint, image_name] + args
-    
+
     attempt = 1
     while attempt <= max_attempts:
         start_time = time.time()
-        
+
         try:
-            # NO TIMEOUT - let the command finish naturally
-            # This is CRITICAL - timeout was causing 58+ failed attempts
+            # Intentionally no timeout here: let command complete naturally.
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
-            
-            elapsed = time.time() - start_time
-            
-            # Check if we got output (even if exit code is non-zero)
-            # Accept stderr as valid output (proof of life, even if checking version fails)
+            _elapsed = time.time() - start_time
+
             combined_output = result.stdout.strip()
             if not combined_output and result.stderr.strip():
                 combined_output = result.stderr.strip()
-            
+
             if combined_output:
                 return True, combined_output
-            
-            # Debug: Print stderr if we failed to get output (should be covered above, but for safety)
-            if result.stderr.strip():
-                print(f"    [DEBUG] stderr: {result.stderr.strip()}")
-            
-            # No output yet - this is normal for first 1-2 attempts
-            # Wait 2 seconds before retry (validated optimal timing)
-            time.sleep(2.0)
+
+            time.sleep(retry_delay)
             attempt += 1
-            
-        except Exception as e:
-            # Other error - probably Docker not running
+        except Exception:
             return False, None
-    
-    # Max attempts reached without success (should never happen with max_attempts=999)
+
     return False, None
+
+
+def _coerce_args(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            out.append(str(item))
+        return out
+    return [str(value)]
+
+
+def _entrypoint_from_compose(
+    compose_path: Path,
+    service_name: str,
+) -> tuple[str | None, list[str]]:
+    """
+    Return (entrypoint, entrypoint_extra_args) from compose service if available.
+    """
+    if not compose_path.exists():
+        return None, []
+    try:
+        with open(compose_path, "r", encoding="utf-8") as f:
+            compose_cfg = yaml.safe_load(f) or {}
+        service_cfg = (compose_cfg.get("services") or {}).get(service_name) or {}
+        ep_tokens = _coerce_args(service_cfg.get("entrypoint"))
+        if not ep_tokens:
+            return None, []
+        return ep_tokens[0], ep_tokens[1:]
+    except Exception:
+        return None, []
+
+
+def _resolve_entrypoint_and_args(task_dir: Path, vuln_service: str) -> tuple[str, list[str]]:
+    """
+    Resolve readiness command with these priorities:
+    1) task.yml target.binary + target.verify_args
+    2) compose service entrypoint (+ entrypoint trailing args)
+    3) historical fallback (/opt/target/bin/bsdtar --version)
+    """
+    task_yml_path = task_dir / "task.yml"
+    compose_path = task_dir / "compose.yml"
+
+    entrypoint: str | None = None
+    verify_args: list[str] = ["--version"]
+
+    if task_yml_path.exists():
+        try:
+            with open(task_yml_path, "r", encoding="utf-8") as f:
+                task_config = yaml.safe_load(f) or {}
+            target_cfg = task_config.get("target") or {}
+            binary = target_cfg.get("binary")
+            if binary:
+                entrypoint = str(binary)
+            verify_args_cfg = target_cfg.get("verify_args")
+            if isinstance(verify_args_cfg, list):
+                verify_args = [str(x) for x in verify_args_cfg]
+        except Exception:
+            pass
+
+    if not entrypoint:
+        compose_entrypoint, compose_entrypoint_args = _entrypoint_from_compose(
+            compose_path,
+            vuln_service,
+        )
+        if compose_entrypoint:
+            entrypoint = compose_entrypoint
+            # For compose-only legacy tasks, avoid forcing --version.
+            # If entrypoint already has extra args, preserve them.
+            verify_args = compose_entrypoint_args if compose_entrypoint_args else []
+
+    if not entrypoint:
+        entrypoint = "/opt/target/bin/bsdtar"
+        verify_args = ["--version"]
+
+    return entrypoint, verify_args
 
 
 def verify_task_images_ready(
     task_id: str,
+    vuln_service: str = "target-vuln",
     max_attempts: int = 5,
     retry_delay: float = 1.0,
-    verbose: bool = True
+    verbose: bool = True,
 ) -> tuple[bool, dict[str, Optional[str]]]:
     """
     Verify that both vulnerable and fixed images for a task are ready.
-    
-    This is the main function to call after building task images. It verifies
-    both the vulnerable and fixed versions respond correctly.
-    
-    Args:
-        task_id: Task ID (e.g., "CVE-2024-57970_libarchive")
-        max_attempts: Maximum retry attempts per image (default: 5)
-        retry_delay: Seconds between retries (default: 1.0)
-        verbose: Print progress messages (default: True)
-    
-    Returns:
-        Tuple of (all_ready: bool, versions: dict)
-        - all_ready: True if both images are ready
-        - versions: Dict with keys 'vuln' and 'fixed' mapping to version strings
-    
-    Example:
-        >>> ready, versions = verify_task_images_ready("CVE-2024-57970_libarchive")
-        >>> if ready:
-        ...     print(f"Vuln: {versions['vuln']}")
-        ...     print(f"Fixed: {versions['fixed']}")
     """
-    # Construct image names based on compose.yml convention
-    # Images are published under the `tfm-justin` namespace with tags `:vuln` and `:fixed`
-    # Example: tfm-justin/cve-2024-57970_libarchive:vuln
     vuln_image = f"tfm-justin/{task_id.lower()}:vuln"
     fixed_image = f"tfm-justin/{task_id.lower()}:fixed"
-    
-    # Determine entrypoint from task.yml or use default
-    # Look for tasks/<task_id>/task.yml and read target.binary
-    import yaml
-    task_yml_path = Path(__file__).parent.parent.parent / "tasks" / task_id / "task.yml"
-    entrypoint = "/opt/target/bin/bsdtar"  # Default fallback
-    
-    if task_yml_path.exists():
-        try:
-            with open(task_yml_path, 'r') as f:
-                task_config = yaml.safe_load(f)
-            if task_config and 'target' in task_config and 'binary' in task_config['target']:
-                entrypoint = task_config['target']['binary']
-        except Exception:
-            pass  # Use default if reading fails
-    
-    # Determine verification arguments from task.yml
-    verify_args = ["--version"]  # Default
-    if task_yml_path.exists():
-        try:
-            with open(task_yml_path, 'r') as f:
-                task_config = yaml.safe_load(f)
-            if task_config and 'target' in task_config and 'verify_args' in task_config['target']:
-                verify_args = task_config['target']['verify_args']
-        except Exception:
-            pass
-    
-    versions = {}
-    
-    # Verify vulnerable image
+    task_dir = Path(__file__).parent.parent.parent / "tasks" / task_id
+
+    entrypoint, verify_args = _resolve_entrypoint_and_args(task_dir, vuln_service)
+    versions: dict[str, Optional[str]] = {}
+
     if verbose:
         print(f"  Verifying vulnerable image ({vuln_image})...")
-    
+
     attempt = 1
+    vuln_ready = False
     while attempt <= max_attempts:
         if verbose and attempt > 1:
             print(f"    Attempt {attempt}...")
-        
+
         vuln_ready, vuln_version = verify_image_ready(
             vuln_image,
             entrypoint,
             verify_args,
-            max_attempts=1,  # Single attempt, we control the loop
-            retry_delay=retry_delay
+            max_attempts=1,
+            retry_delay=retry_delay,
         )
-        
+
         if vuln_ready:
-            versions['vuln'] = vuln_version
+            versions["vuln"] = vuln_version
             if verbose:
                 print(f"    ✓ Vulnerable image ready after {attempt} attempt(s)")
                 print(f"      {vuln_version.split()[0:3]}")
             break
-        else:
-            if verbose:
-                print(f"    ○ Attempt {attempt}: No output, waiting 2s...")
-            time.sleep(2.0)
-            attempt += 1
-    
+
+        if verbose:
+            print(f"    ○ Attempt {attempt}: No output, waiting {retry_delay:.1f}s...")
+        time.sleep(retry_delay)
+        attempt += 1
+
     if not vuln_ready:
-        versions['vuln'] = None
+        versions["vuln"] = None
         if verbose:
             print(f"    ✗ Vulnerable image not responding after {max_attempts} attempts")
         return False, versions
-    
-    # Verify fixed image
+
     if verbose:
         print(f"\n  Verifying fixed image ({fixed_image})...")
-    
+
     attempt = 1
+    fixed_ready = False
     while attempt <= max_attempts:
         if verbose and attempt > 1:
             print(f"    Attempt {attempt}...")
-        
+
         fixed_ready, fixed_version = verify_image_ready(
             fixed_image,
             entrypoint,
             verify_args,
-            max_attempts=1,  # Single attempt, we control the loop
-            retry_delay=retry_delay
+            max_attempts=1,
+            retry_delay=retry_delay,
         )
-        
+
         if fixed_ready:
-            versions['fixed'] = fixed_version
+            versions["fixed"] = fixed_version
             if verbose:
                 print(f"    ✓ Fixed image ready after {attempt} attempt(s)")
                 print(f"      {fixed_version.split()[0:3]}")
             break
-        else:
-            if verbose:
-                print(f"    ○ Attempt {attempt}: No output, waiting 2s...")
-            time.sleep(2.0)
-            attempt += 1
-    
+
+        if verbose:
+            print(f"    ○ Attempt {attempt}: No output, waiting {retry_delay:.1f}s...")
+        time.sleep(retry_delay)
+        attempt += 1
+
     if not fixed_ready:
-        versions['fixed'] = None
+        versions["fixed"] = None
         if verbose:
             print(f"    ✗ Fixed image not responding after {max_attempts} attempts")
         return False, versions
-    
+
     return True, versions
 
 
 def wait_for_task_images(
     task_id: str,
     max_attempts: int = 5,
-    retry_delay: float = 1.0
+    retry_delay: float = 1.0,
 ) -> bool:
     """
     Wait for task images to be ready (blocking).
-    
-    Simple wrapper around verify_task_images_ready that returns only success status.
-    Use this when you just need to block until images are ready.
-    
-    Args:
-        task_id: Task ID (e.g., "CVE-2024-57970_libarchive")
-        max_attempts: Maximum retry attempts per image (default: 5)
-        retry_delay: Seconds between retries (default: 1.0)
-    
-    Returns:
-        True if both images are ready, False otherwise
     """
-    ready, _ = verify_task_images_ready(task_id, max_attempts, retry_delay, verbose=True)
+    ready, _ = verify_task_images_ready(
+        task_id,
+        max_attempts=max_attempts,
+        retry_delay=retry_delay,
+        verbose=True,
+    )
     return ready

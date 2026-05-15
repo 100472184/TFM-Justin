@@ -107,10 +107,10 @@ OLLAMA_MODEL_ENV_OVERRIDES: dict[str, dict[str, str]] = {
 OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
     # libxml2 legacy task: reduce GENERATE drift and long strategy replies.
     "CVE-2024-25062_libxml2": {
-        "LLM_GENERATE_MAX_TOKENS": "2400",
-        "LLM_GENERATE_TIMEOUT": "150",
+        "LLM_GENERATE_MAX_TOKENS": "1400",
+        "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
-        "LLM_GENERATE_HISTORY_WINDOW": "2",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
 }
 
@@ -518,15 +518,24 @@ def run_cmd(
                 t_err.join(timeout=2)
                 return CmdResult(returncode=124, output=f"{''.join(stdout_chunks)}\n{''.join(stderr_chunks)}", timed_out=True)
             except KeyboardInterrupt:
-                # On Ctrl+C, terminate child and re-raise to caller.
+                # On Ctrl+C, terminate child and return partial output so callers
+                # can still extract diagnostics before aborting the batch.
                 proc.terminate()
                 try:
                     proc.wait(timeout=5)
                 except Exception:
                     proc.kill()
+                    try:
+                        proc.wait(timeout=5)
+                    except Exception:
+                        pass
                 t_out.join(timeout=2)
                 t_err.join(timeout=2)
-                raise
+                partial = f"{''.join(stdout_chunks)}\n{''.join(stderr_chunks)}"
+                if partial and not partial.endswith("\n"):
+                    partial += "\n"
+                partial += "[run_pending_models] keyboard interrupt captured\n"
+                return CmdResult(returncode=130, output=partial, timed_out=False)
 
             t_out.join(timeout=2)
             t_err.join(timeout=2)
@@ -1235,11 +1244,15 @@ def extract_generate_diagnostics(output: str) -> dict[str, int]:
             + text.count("no mutations proposed")
         ),
         "mutation_application_errors": text.count("mutation application error:"),
+        "unknown_mutation_ops": text.count("unknown mutation operation:"),
         "llm_generation_failed": text.count("error: llm generation failed:"),
         "llm_timeout_errors": (
             text.count("litellm.timeout")
             + text.count("connection timed out after")
         ),
+        "xml_parser_errors": text.count("parser error :"),
+        "seed_validation_failures": text.count("validation failed:"),
+        "task_guard_failures": text.count("task guard failed:"),
         "generate_retry_attempts": len(re.findall(r"retry attempt \d+/\d+", text)),
         "max_token_response_hits": 0,
         "max_token_observed": 0,
@@ -1270,8 +1283,12 @@ def generate_diag_score(metrics: dict[str, int]) -> int:
         + metrics.get("json_parse_errors", 0)
         + metrics.get("generate_no_mutations", 0)
         + metrics.get("mutation_application_errors", 0) * 2
+        + metrics.get("unknown_mutation_ops", 0) * 3
         + metrics.get("llm_generation_failed", 0) * 3
         + metrics.get("llm_timeout_errors", 0) * 3
+        + metrics.get("xml_parser_errors", 0)
+        + metrics.get("seed_validation_failures", 0) * 2
+        + metrics.get("task_guard_failures", 0) * 2
     )
 
 
@@ -1281,8 +1298,12 @@ def has_generate_diag_signal(metrics: dict[str, int]) -> bool:
         "json_parse_errors",
         "generate_no_mutations",
         "mutation_application_errors",
+        "unknown_mutation_ops",
         "llm_generation_failed",
         "llm_timeout_errors",
+        "xml_parser_errors",
+        "seed_validation_failures",
+        "task_guard_failures",
         "generate_retry_attempts",
     ]
     return any(metrics.get(k, 0) > 0 for k in tracked)
@@ -1340,8 +1361,12 @@ def write_generate_diagnostics_artifacts(
                 f"empty={rec['metrics']['empty_response_warnings']}, "
                 f"json={rec['metrics']['json_parse_errors']}, "
                 f"no_mut={rec['metrics']['generate_no_mutations']}, "
+                f"unknown_ops={rec['metrics']['unknown_mutation_ops']}, "
                 f"gen_fail={rec['metrics']['llm_generation_failed']}, "
                 f"timeouts={rec['metrics']['llm_timeout_errors']}, "
+                f"xml_err={rec['metrics']['xml_parser_errors']}, "
+                f"seed_val={rec['metrics']['seed_validation_failures']}, "
+                f"task_guard={rec['metrics']['task_guard_failures']}, "
                 f"retries={rec['metrics']['generate_retry_attempts']}, "
                 f"max_tok={rec['metrics']['max_token_observed']} "
                 f"(hits={rec['metrics']['max_token_response_hits']})"
@@ -2060,6 +2085,7 @@ def main() -> int:
                 f"{combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) "
                 f"score={score} empty={generate_metrics['empty_response_warnings']} "
                 f"json={generate_metrics['json_parse_errors']} "
+                f"unknown_ops={generate_metrics['unknown_mutation_ops']} "
                 f"gen_fail={generate_metrics['llm_generation_failed']} "
                 f"timeouts={generate_metrics['llm_timeout_errors']}"
             )
@@ -2080,11 +2106,11 @@ def main() -> int:
                 break
             continue
         if run_res.returncode == 130:
-            msg = "pipeline-interrupted-130"
+            msg = "keyboard-interrupt-during-run"
             failed.append((combo, msg))
             update_combo_state(state, combo, "failed", msg)
             save_state(state_path, state)
-            log("ERROR pipeline devolvio 130 (interrupcion). Abortando batch.")
+            log("Interrupcion manual detectada (Ctrl+C). Abortando batch de forma segura.")
             break
         if run_res.returncode not in (0, 1):
             msg = f"pipeline-command-exit:{run_res.returncode}"
@@ -2321,8 +2347,9 @@ def main() -> int:
                 f"{rec['cve']} {rec['model_alias']} {rec['level']} ({rec['seed_profile']}): "
                 f"score={rec['score']} "
                 f"empty={m['empty_response_warnings']} json={m['json_parse_errors']} "
-                f"no_mut={m['generate_no_mutations']} gen_fail={m['llm_generation_failed']} "
-                f"timeouts={m['llm_timeout_errors']}"
+                f"no_mut={m['generate_no_mutations']} unknown_ops={m['unknown_mutation_ops']} "
+                f"gen_fail={m['llm_generation_failed']} timeouts={m['llm_timeout_errors']} "
+                f"xml_err={m['xml_parser_errors']}"
             )
     state["generate_diagnostics"] = {
         "combos_with_signal": len(generate_diag_records),
@@ -2344,7 +2371,7 @@ def main() -> int:
         return 0
 
     # Ctrl+C outside subprocess or interrupcion general
-    if failed and any(reason == "keyboard-interrupt-during-run" for _, reason in failed):
+    if failed and any(reason in {"keyboard-interrupt-during-run", "pipeline-interrupted-130"} for _, reason in failed):
         print("\nEjecucion interrumpida por usuario. NO se hara commit/push automatico.")
         if executed_ok:
             print(f"\n  ℹ {len(executed_ok)} run(s) completada(s) y staged antes de la interrupcion.")
