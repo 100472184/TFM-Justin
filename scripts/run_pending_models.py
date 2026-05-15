@@ -403,6 +403,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2023-39804_gnutar", "ministral-3-8b", "L1"),
     ("CVE-2025-26623_exiv2", "ministral-3-8b", "L1"),
     ("CVE-2025-49014_jq", "ministral-3-8b", "L1"),
+    # Validated completion (2026-05-15): gemini-3-flash-preview L1.
+    ("CVE-2022-4899_zstd", "gemini-3-flash-preview", "L1"),
     # Validated L0 completions (2026-05-14): staged runs verified by summary.json
     # validity policy (full-budget failures or success-early termination).
     ("CVE-2014-2525_libyaml", "glm-5.1", "L0"),
@@ -420,6 +422,12 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "gpt-oss-20b", "L0"),
     ("CVE-2016-9827_libming", "gpt-oss-20b", "L0"),
     ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L0"),
+    # Validated completions (2026-05-15): staged in interrupted batch, non-anomalous.
+    ("CVE-2025-26623_exiv2", "gemini-3-flash-preview", "L0"),
+    ("CVE-2024-4323_fluentbit", "glm-5.1", "L0"),
+    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L0"),
+    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L0"),
+    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L0"),
     # Validated upload/audit (2026-05-15): 38 completadas staged, 0 anomalas.
     # Add missing unique keys so they are not rescheduled automatically.
     ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L2"),
