@@ -1173,25 +1173,38 @@ def run_pipeline(
         # Calculate summary of all previously tried sizes to avoid "amnesia" in both ANALYZE and GENERATE
         tried_sizes = []
         for h in verify_history:
+            if not isinstance(h, dict):
+                continue
+
             # 1. Check verified mutations
-            if h.get("mutations_applied"):
-                 for m in h["mutations_applied"]:
-                     if m.get("op") == "truncate" and "new_len" in m:
-                         try:
-                             tried_sizes.append(int(m["new_len"]))
-                         except (ValueError, TypeError):
-                             pass
-            
+            applied = h.get("mutations_applied")
+            if isinstance(applied, list):
+                for m in applied:
+                    if not isinstance(m, dict):
+                        continue
+                    if m.get("op") == "truncate" and "new_len" in m:
+                        try:
+                            tried_sizes.append(int(m["new_len"]))
+                        except (ValueError, TypeError):
+                            pass
+
             # 2. Check failed attempts (e.g. validation errors, but we still tried this size)
-            if h.get("failed_attempts"):
-                for fa in h["failed_attempts"]:
-                    if fa.get("mutations"):
-                        for m in fa["mutations"]:
-                            if m.get("op") == "truncate" and "new_len" in m:
-                                try:
-                                    tried_sizes.append(int(m["new_len"]))
-                                except (ValueError, TypeError):
-                                    pass
+            failed = h.get("failed_attempts")
+            if isinstance(failed, list):
+                for fa in failed:
+                    if not isinstance(fa, dict):
+                        continue
+                    fa_mutations = fa.get("mutations")
+                    if not isinstance(fa_mutations, list):
+                        continue
+                    for m in fa_mutations:
+                        if not isinstance(m, dict):
+                            continue
+                        if m.get("op") == "truncate" and "new_len" in m:
+                            try:
+                                tried_sizes.append(int(m["new_len"]))
+                            except (ValueError, TypeError):
+                                pass
         
         tried_sizes_str = str(sorted(list(set(tried_sizes)))) if tried_sizes else "None"
 
