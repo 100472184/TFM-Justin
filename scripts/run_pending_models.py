@@ -268,6 +268,9 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L3"),
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L3"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L3"),
+    # Validated L3 completion (2026-05-15 upload/audit): deepseek-v4-pro.
+    ("CVE-2025-49014_jq", "deepseek-v4-pro", "L3"),
+    ("CVE-2025-26623_exiv2", "deepseek-v4-pro", "L3"),
     # Validated L3 completions (2026-05-15 interrupted batch, pass 1).
     ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L3"),
     ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L3"),
@@ -275,6 +278,10 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     # Hardcoding by (CVE, model, level) intentionally marks both as completed.
     ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L3"),
     ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L3"),
+    ("CVE-2024-4323_fluentbit", "glm-5.1", "L3"),
+    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L3"),
+    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L3"),
+    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L3"),
     ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L3"),
     ("CVE-2022-24724_cmark-gfm", "qwen3-coder-next", "L3"),
     ("CVE-2022-24724_cmark-gfm", "gpt-oss-20b", "L3"),
@@ -303,6 +310,20 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2025-49014_jq", "gpt-oss-20b", "L3"),
     ("CVE-2025-49014_jq", "ministral-3-8b", "L3"),
     # New validated L2 completions (2026-05-12 batch)
+    # Additional validated L2 completions (2026-05-15 upload/audit):
+    ("CVE-2014-2525_libyaml", "gemini-3-flash-preview", "L2"),
+    ("CVE-2016-9827_libming", "gemini-3-flash-preview", "L2"),
+    ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L2"),
+    ("CVE-2022-24724_cmark-gfm", "gemini-3-flash-preview", "L2"),
+    ("CVE-2022-4899_zstd", "gemini-3-flash-preview", "L2"),
+    ("CVE-2023-39804_gnutar", "gemini-3-flash-preview", "L2"),
+    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L2"),
+    ("CVE-2025-26623_exiv2", "gemini-3-flash-preview", "L2"),
+    ("CVE-2025-49014_jq", "gemini-3-flash-preview", "L2"),
+    ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L2"),
+    ("CVE-2016-9827_libming", "deepseek-v4-pro", "L2"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L2"),
+    ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L2"),
     ("CVE-2014-2525_libyaml", "glm-5.1", "L2"),
     ("CVE-2016-9827_libming", "glm-5.1", "L2"),
     ("CVE-2021-32292_jsonc", "glm-5.1", "L2"),
