@@ -580,6 +580,9 @@ SUPPORTED_MUTATION_OPS = {
     "pad_file",
     "insert_zlib_payload",
     "append_swf_tag",
+    "replace",
+    "replace_fragment",
+    "replace_word",
 }
 
 
@@ -609,6 +612,14 @@ def _precheck_mutations_for_seed(mutations: Any, seed_len: int, extension: str) 
             hex_str = str(mut.get("hex", "")).replace(" ", "")
             if text_seed and _hex_has_nul_byte(hex_str):
                 return f"text-seed guard: mutation #{i} ({op}) contains byte 00"
+
+        if op in {"replace", "replace_fragment", "replace_word"} and text_seed:
+            repl_hex = str(mut.get("replace_hex", "")).replace(" ", "")
+            if repl_hex and _hex_has_nul_byte(repl_hex):
+                return f"text-seed guard: mutation #{i} ({op}) replace_hex contains byte 00"
+            repl_text = mut.get("replace")
+            if isinstance(repl_text, str) and "\x00" in repl_text:
+                return f"text-seed guard: mutation #{i} ({op}) replace contains NUL"
 
         if op == "truncate":
             new_len = _to_int(mut.get("new_len"))
@@ -774,6 +785,11 @@ def _task_specific_seed_guard(task_id: str, level: str, seed_bytes: bytes, exten
                 ET.fromstring(seed_bytes)
             except Exception as e:
                 return False, f"libxml2-xinclude guard: XML not well-formed ({_one_line(e, 120)})"
+            raw = bytes(seed_bytes)
+            if b'xmlns:xi="http://www.w3.org/2001/XInclude"' not in raw:
+                return False, "libxml2-xinclude guard: missing canonical xmlns:xi URI"
+            if b"<xi:include" not in raw:
+                return False, "libxml2-xinclude guard: missing xi:include element"
         return True, ""
 
     if extension.lower() != ".json":
@@ -1472,7 +1488,8 @@ def run_pipeline(
                     "- Keep output compact: 1-3 mutations and short rationale (<220 chars).\n"
                     "- Output must stay XML well-formed (no broken tags/attributes/doctype).\n"
                     "- Use ONLY supported ops from the prompt; do NOT invent op names.\n"
-                    "- Prefer conservative overwrite_range edits inside existing quoted values.\n"
+                    "- Prefer `replace`/`replace_fragment` for conservative edits.\n"
+                    "- If you modify include references, keep values as inc.xml/inc2.xml style.\n"
                     "- Do NOT corrupt <, >, <!DOCTYPE, </...>, xmlns:xi, or quote delimiters.\n"
                 )
             

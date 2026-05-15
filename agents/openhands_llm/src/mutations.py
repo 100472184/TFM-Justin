@@ -133,6 +133,9 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
     - truncate: {"op": "truncate", "new_len": 200}
     - repeat_range: {"op": "repeat_range", "offset": 20, "length": 40, "times": 3}
     - insert_repeated_bytes: {"op": "insert_repeated_bytes", "offset": 20, "hex": "41", "times": 1000}
+    - replace: {"op": "replace", "find": "old", "replace": "new", "count": 1}
+    - replace_fragment: alias of replace
+    - replace_word: alias of replace
     - add_exif_subifd_loop: {"op": "add_exif_subifd_loop", "subifd_count": 4, "loop_target_offset": 8}
     - add_exif_subifd_chain: {"op": "add_exif_subifd_chain", "subifd_count": 8, "close_loop": true, "next_mode": "loop"}
     """
@@ -514,6 +517,56 @@ def apply_mutations(seed_bytes: bytes, mutations: List[Dict]) -> bytes:
             # Actualizar el atributo total length (bytes 4-7)
             if len(result) >= 8:
                 struct.pack_into('<I', result, 4, len(result))
+
+        elif op in {"replace", "replace_fragment", "replace_word"}:
+            # Flexible literal replacement for text-oriented seeds (also works on raw bytes).
+            # Accepted shapes:
+            # 1) {"find":"abc","replace":"xyz"}
+            # 2) {"find_hex":"616263","replace_hex":"78797a"}
+            # Optional: {"count": 1}  # <=0 means replace all
+            find_hex = mut.get("find_hex")
+            repl_hex = mut.get("replace_hex")
+            find_text = mut.get("find")
+            repl_text = mut.get("replace")
+
+            try:
+                if isinstance(find_hex, str):
+                    clean = find_hex.replace(" ", "")
+                    validate_hex_string(clean, op)
+                    find_bytes = bytes.fromhex(clean)
+                elif isinstance(find_text, str):
+                    find_bytes = find_text.encode("utf-8")
+                else:
+                    raise ValueError(f"{op} requires 'find' or 'find_hex'")
+
+                if isinstance(repl_hex, str):
+                    clean = repl_hex.replace(" ", "")
+                    validate_hex_string(clean, op)
+                    repl_bytes = bytes.fromhex(clean)
+                elif isinstance(repl_text, str):
+                    repl_bytes = repl_text.encode("utf-8")
+                else:
+                    raise ValueError(f"{op} requires 'replace' or 'replace_hex'")
+
+                if not find_bytes:
+                    raise ValueError(f"{op} find pattern cannot be empty")
+            except ValueError:
+                raise
+            except Exception as e:
+                raise ValueError(f"{op} argument error: {e}")
+
+            count = mut.get("count", 0)
+            try:
+                count_i = int(count)
+            except Exception:
+                count_i = 0
+
+            src = bytes(result)
+            if count_i > 0:
+                dst = src.replace(find_bytes, repl_bytes, count_i)
+            else:
+                dst = src.replace(find_bytes, repl_bytes)
+            result = bytearray(dst)
 
         else:
             raise ValueError(f"Unknown mutation operation: {op}")

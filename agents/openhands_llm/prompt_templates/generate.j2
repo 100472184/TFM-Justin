@@ -204,6 +204,13 @@ Iteration {{ result.iteration }}:
       - `"loop"`: linear chain with last -> first loop
     - Works best when combined with small `overwrite_range` perturbations near APP1/TIFF metadata fields.
 
+15. **replace / replace_fragment / replace_word**: Literal replacement helper for text-like formats.
+    Examples:
+    - {"op": "replace", "find": "inc_x.xml", "replace": "inc.xml", "count": 1}
+    - {"op": "replace_fragment", "find": "<a>first</a>", "replace": "<a>first2</a>"}
+    - {"op": "replace", "find_hex": "696e635f782e786d6c", "replace_hex": "696e632e786d6c"}
+    Use for: Safe structural tweaks in XML/JSON/text without inventing unsupported ops.
+
 4. **PAYLOAD VARIATION**:
    - Try a wide range of sizes for your mutations.
    - Some bugs require small, precise inputs.

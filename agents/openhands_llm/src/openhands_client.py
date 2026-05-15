@@ -417,6 +417,62 @@ def _has_generate_mutations(payload: object) -> bool:
     return False
 
 
+def _extract_balanced_json_fragment(text: str) -> str | None:
+    """
+    Extract first balanced JSON object/array fragment from arbitrary text.
+    Helps recover valid payloads when LLM appends trailing prose.
+    """
+    if not text:
+        return None
+    start = -1
+    opener = ""
+    for i, ch in enumerate(text):
+        if ch in "{[":
+            start = i
+            opener = ch
+            break
+    if start < 0:
+        return None
+
+    closer = "}" if opener == "{" else "]"
+    stack = [opener]
+    in_string = False
+    escaped = False
+
+    for i in range(start + 1, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+        if ch in "{[":
+            stack.append(ch)
+            continue
+        if ch in "}]":
+            if not stack:
+                return None
+            top = stack[-1]
+            if (top == "{" and ch == "}") or (top == "[" and ch == "]"):
+                stack.pop()
+                if not stack:
+                    frag = text[start : i + 1].strip()
+                    return frag if frag else None
+            else:
+                return None
+
+    return None
+
+
 class OpenHandsLLMClient:
     """Wrapper around OpenHands SDK LLM for JSON completions."""
     
@@ -703,15 +759,32 @@ class OpenHandsLLMClient:
                 except Exception:
                     pass  # If regex fails, just proceed to json.loads
 
-                try:
-                    parsed = json.loads(content)
+                # Try parsing original content and, if needed, a balanced fragment.
+                parse_candidates = [content]
+                balanced = _extract_balanced_json_fragment(content)
+                if balanced and balanced not in parse_candidates:
+                    parse_candidates.append(balanced)
+
+                parsed = None
+                parsed_from = None
+                parse_exc: Exception | None = None
+                for candidate in parse_candidates:
+                    try:
+                        parsed = json.loads(candidate)
+                        parsed_from = candidate
+                        break
+                    except json.JSONDecodeError as e:
+                        parse_exc = e
+                        continue
+
+                if parsed is not None:
                     if schema_kind == "generate" and not _has_generate_mutations(parsed):
                         print(
                             f"  Warning: Generate payload has no mutations "
                             f"(attempt {attempt + 1}/{effective_max_retries + 1})"
                         )
                         if attempt < effective_max_retries:
-                            compact_original = _compact_for_repair_prompt(content)
+                            compact_original = _compact_for_repair_prompt(parsed_from or content)
                             repair_prompt = (
                                 "The previous JSON was valid but unusable because it contains no mutations. "
                                 "Return valid JSON with at least ONE mutation operation. "
@@ -732,46 +805,42 @@ class OpenHandsLLMClient:
                             ]
                             continue
                     return parsed
-                except json.JSONDecodeError:
-                    # Fallback: Try ast.literal_eval for Python-style dicts/lists
-                    # This handles:
-                    # - Single quotes: {'key': 'val'}
-                    # - Trailing commas: [1, 2,]
-                    # - Basic math: "A" * 10 (sometimes works if it's simple literal)
-                    # - Concatenation: "A" + "B" (sometimes)
-                    try:
-                        import ast
-                        # ast.literal_eval is safe (no arbitrary code execution)
-                        # It can handle basic Python literals which often matches what LLMs hallucinate
-                        evaluated = ast.literal_eval(content)
-                        if isinstance(evaluated, (dict, list)):
-                            if schema_kind == "generate" and not _has_generate_mutations(evaluated):
-                                if attempt < effective_max_retries:
-                                    compact_original = _compact_for_repair_prompt(content)
-                                    repair_prompt = (
-                                        "The previous response was parseable but has no mutations. "
-                                        "Return valid JSON with at least one mutation in `mutations`.\n"
-                                        f"Original response:\n{compact_original}"
-                                    )
-                                    messages = [
-                                        {
-                                            "role": "system",
-                                            "content": (
-                                                "You must respond with valid JSON only and include at least one "
-                                                "mutation operation in `mutations`."
-                                            ),
-                                        },
-                                        {"role": "user", "content": repair_prompt},
-                                    ]
-                                    continue
-                            return evaluated
-                    except (ValueError, SyntaxError):
-                        # If ast fails too, then we truly have invalid data
-                        pass
-                    
-                    # Re-raise original error to trigger retry logic
-                    # Re-raise original error to trigger retry logic
-                    raise
+
+                # Fallback: Try ast.literal_eval for Python-style dicts/lists
+                # This handles:
+                # - Single quotes: {'key': 'val'}
+                # - Trailing commas: [1, 2,]
+                try:
+                    import ast
+                    evaluated = ast.literal_eval(content)
+                    if isinstance(evaluated, (dict, list)):
+                        if schema_kind == "generate" and not _has_generate_mutations(evaluated):
+                            if attempt < effective_max_retries:
+                                compact_original = _compact_for_repair_prompt(content)
+                                repair_prompt = (
+                                    "The previous response was parseable but has no mutations. "
+                                    "Return valid JSON with at least one mutation in `mutations`.\n"
+                                    f"Original response:\n{compact_original}"
+                                )
+                                messages = [
+                                    {
+                                        "role": "system",
+                                        "content": (
+                                            "You must respond with valid JSON only and include at least one "
+                                            "mutation operation in `mutations`."
+                                        ),
+                                    },
+                                    {"role": "user", "content": repair_prompt},
+                                ]
+                                continue
+                        return evaluated
+                except (ValueError, SyntaxError):
+                    pass
+
+                # Re-raise original parse error to trigger retry logic
+                if parse_exc is not None:
+                    raise parse_exc
+                raise json.JSONDecodeError("invalid JSON payload", content, 0)
 
             except json.JSONDecodeError as e:
                 # Minimal error logging - show only error type and position

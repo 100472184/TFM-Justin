@@ -1244,7 +1244,10 @@ def extract_generate_diagnostics(output: str) -> dict[str, int]:
             + text.count("no mutations proposed")
         ),
         "mutation_application_errors": text.count("mutation application error:"),
-        "unknown_mutation_ops": text.count("unknown mutation operation:"),
+        "unknown_mutation_ops": (
+            text.count("unknown mutation operation:")
+            + text.count("unsupported op '")
+        ),
         "llm_generation_failed": text.count("error: llm generation failed:"),
         "llm_timeout_errors": (
             text.count("litellm.timeout")
