@@ -153,6 +153,14 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_GENERATE_HISTORY_WINDOW": "3",
     },
+    # cmark-gfm + glm-5.1 (L0 hotspot): repeated empty responses exactly at
+    # max token budget with long retry loops. Force concise direct output.
+    ("CVE-2022-24724_cmark-gfm", "ollama/glm-5.1"): {
+        "LLM_GENERATE_MAX_TOKENS": "1600",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
     # Exiv2 + deepseek can stall in long/thought-heavy GENERATE replies:
     # repeated 3200-token truncation/empty payload loops and 90s timeouts.
     # Keep JSON mode but reduce response verbosity and allow more wall-clock.
@@ -500,6 +508,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L0"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L0"),
     ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L0"),
+    ("CVE-2025-49014_jq", "deepseek-v4-pro", "L0"),
     ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L0"),
     ("CVE-2025-26623_exiv2", "deepseek-v4-pro", "L0"),
     # CVE-2024-4323 has two seed profiles; this key marks both L0 runs done.
