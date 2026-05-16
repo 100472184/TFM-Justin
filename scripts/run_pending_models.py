@@ -157,11 +157,11 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
     # repeated 3200-token truncation/empty payload loops and 90s timeouts.
     # Keep JSON mode but reduce response verbosity and allow more wall-clock.
     ("CVE-2025-26623_exiv2", "ollama/deepseek-v4-pro"): {
-        "LLM_GENERATE_MAX_TOKENS": "2400",
-        "LLM_GENERATE_TIMEOUT": "150",
-        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         # Reduce prompt amplification loops after many failed iterations.
-        "LLM_GENERATE_HISTORY_WINDOW": "2",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     # libming + deepseek-v4-pro: observed repeated 3200-token empty responses
     # and occasional timeout loops in GENERATE. Disable thinking and reduce
@@ -495,6 +495,9 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L0"),
     # CVE-2024-4323 has two seed profiles; this key marks both L0 runs done.
     ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L0"),
+    # Validated completion (2026-05-16): avoid re-scheduling on hosts with
+    # partial local runs trees.
+    ("CVE-2024-57970_libarchive", "deepseek-v4-pro", "L0"),
     ("CVE-2024-57970_libarchive", "gemini-3-flash-preview", "L0"),
     ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L0"),
     ("CVE-2016-9827_libming", "qwen3-coder-next", "L0"),
