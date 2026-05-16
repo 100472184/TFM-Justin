@@ -906,6 +906,29 @@ def canonical_dest(
     return model_dir / f"{level}_{cve}"
 
 
+def _path_is_tracked_in_git(repo_root: Path, path: Path) -> bool:
+    """
+    Return True when at least one tracked file exists under `path` in git index.
+    This helps keep scheduling stable even if the local working tree copy of
+    runs/ was deleted to free disk space.
+    """
+    try:
+        rel = path.relative_to(repo_root).as_posix()
+    except Exception:
+        return False
+    proc = subprocess.run(
+        ["git", "ls-files", "--", rel],
+        cwd=str(repo_root),
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=20,
+    )
+    if proc.returncode != 0:
+        return False
+    return any(line.strip() for line in proc.stdout.splitlines())
+
+
 def find_existing_level_run(
     runs_root: Path,
     cve: str,
@@ -931,6 +954,10 @@ def find_existing_level_run(
         if ok:
             return True, f"exists-canonical:{dest.name}"
         return False, f"canonical-invalid:{why}"
+    # If local runs/ were cleaned up but canonical run files are still tracked
+    # in git, treat them as existing to avoid false re-scheduling.
+    if _path_is_tracked_in_git(runs_root.parent, dest):
+        return True, f"exists-canonical-index:{dest.name}"
     if not model_dir.is_dir():
         return False, "model-dir-missing"
 
