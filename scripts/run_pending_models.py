@@ -180,6 +180,14 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
+    # gnutar + deepseek-v4-pro (L0 pending hotspot): repeated 3200-token
+    # empty responses and timeout loops in GENERATE.
+    ("CVE-2023-39804_gnutar", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "2200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
 }
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
