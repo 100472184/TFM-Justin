@@ -463,6 +463,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2021-32292_jsonc", "glm-5.1", "L0"),
     ("CVE-2025-49014_jq", "glm-5.1", "L0"),
     ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L0"),
+    ("CVE-2016-9827_libming", "deepseek-v4-pro", "L0"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L0"),
     ("CVE-2024-57970_libarchive", "gemini-3-flash-preview", "L0"),
     ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L0"),
     ("CVE-2016-9827_libming", "qwen3-coder-next", "L0"),
