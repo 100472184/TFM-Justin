@@ -163,6 +163,14 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         # Reduce prompt amplification loops after many failed iterations.
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
+    # jq + deepseek-v4-pro (L0 pending hotspot): repeated max-token empty
+    # responses / timeout loops and malformed overlong filters in GENERATE.
+    ("CVE-2025-49014_jq", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
     # libming + deepseek-v4-pro: observed repeated 3200-token empty responses
     # and occasional timeout loops in GENERATE. Disable thinking and reduce
     # budget to force concise JSON mutation output.
@@ -493,6 +501,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L0"),
     ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L0"),
     ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L0"),
+    ("CVE-2025-26623_exiv2", "deepseek-v4-pro", "L0"),
     # CVE-2024-4323 has two seed profiles; this key marks both L0 runs done.
     ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L0"),
     # Validated completion (2026-05-16): avoid re-scheduling on hosts with
