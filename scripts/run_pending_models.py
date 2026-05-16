@@ -129,6 +129,14 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         "LLM_GENERATE_HISTORY_WINDOW": "2",
     },
+    # libming: stabilize GENERATE for SWF-focused mutation plans and reduce
+    # long/empty responses in low-context levels.
+    "CVE-2016-9827_libming": {
+        "LLM_GENERATE_MAX_TOKENS": "2400",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "2",
+    },
 }
 
 # CVE+model targeted env overrides.
@@ -154,6 +162,15 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         # Reduce prompt amplification loops after many failed iterations.
         "LLM_GENERATE_HISTORY_WINDOW": "2",
+    },
+    # libming + deepseek-v4-pro: observed repeated 3200-token empty responses
+    # and occasional timeout loops in GENERATE. Disable thinking and reduce
+    # budget to force concise JSON mutation output.
+    ("CVE-2016-9827_libming", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
 }
 
@@ -429,6 +446,15 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L1"),
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L1"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L1"),
+    ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L1"),
+    ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L1"),
+    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L1"),
+    ("CVE-2024-57970_libarchive", "deepseek-v4-pro", "L1"),
+    ("CVE-2025-26623_exiv2", "deepseek-v4-pro", "L1"),
+    ("CVE-2025-49014_jq", "deepseek-v4-pro", "L1"),
+    ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L1"),
+    ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L1"),
+    ("CVE-2024-57970_libarchive", "ministral-3-8b", "L1"),
     ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L1"),
     # Validated L0 completions (2026-05-14): staged runs verified by summary.json
     # validity policy (full-budget failures or success-early termination).
@@ -436,6 +462,8 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-9827_libming", "glm-5.1", "L0"),
     ("CVE-2021-32292_jsonc", "glm-5.1", "L0"),
     ("CVE-2025-49014_jq", "glm-5.1", "L0"),
+    ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L0"),
+    ("CVE-2024-57970_libarchive", "gemini-3-flash-preview", "L0"),
     ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L0"),
     ("CVE-2016-9827_libming", "qwen3-coder-next", "L0"),
     ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L0"),

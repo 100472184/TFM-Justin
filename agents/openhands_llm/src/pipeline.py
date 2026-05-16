@@ -1505,6 +1505,15 @@ def run_pipeline(
                     "- If you modify include references, keep values as inc.xml/inc2.xml style.\n"
                     "- Do NOT corrupt <, >, <!DOCTYPE, </...>, xmlns:xi, or quote delimiters.\n"
                 )
+            elif task_id == "CVE-2016-9827_libming":
+                generate_prompt += (
+                    "\n\nTASK-LOCAL RULES (CVE-2016-9827_libming):\n"
+                    "- Keep output compact: 1-2 mutations and short rationale (<180 chars).\n"
+                    "- Use only supported ops; prefer SWF-targeted ops (`append_swf_tag`,\n"
+                    "  `overwrite_range`, `append_bytes`, `truncate`).\n"
+                    "- Avoid large exploratory plans or prose outside strict JSON schema.\n"
+                    "- Keep edits near SWF block/tag boundaries and preserve basic SWF parseability.\n"
+                )
             elif task_id == "CVE-2022-24724_cmark-gfm":
                 # Detect repeated no-progress signal (both builds exit cleanly)
                 # and explicitly steer the model toward boundary-crossing table
