@@ -776,6 +776,11 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_MAX_STAGE_FILE_MB,
         help=f"Tamanio maximo por archivo para git add en runs/ (default: {DEFAULT_MAX_STAGE_FILE_MB} MB).",
     )
+    p.add_argument(
+        "--no-generate-diagnostics",
+        action="store_true",
+        help="No crear ni mostrar reportes RUN_PENDING_MODELS_GENERATE_DIAGNOSTICS_*.",
+    )
     return p.parse_args()
 
 
@@ -2510,41 +2515,45 @@ def main() -> int:
         for combo, reason in failed:
             print(f"- {combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) [{reason}]")
 
-    session_id = str(state.get("session_id", dt.datetime.now().strftime("%Y%m%d_%H%M%S")))
-    diag_json_path, diag_md_path = write_generate_diagnostics_artifacts(
-        runs_root,
-        session_id,
-        generate_diag_records,
-        inspected=len(combos),
-        pending=len(pending),
-        executed_ok=len(executed_ok),
-        failed=len(failed),
-    )
-    rel_diag_md = diag_md_path.relative_to(repo_root).as_posix() if safe_relative_to(diag_md_path, repo_root) else str(diag_md_path)
-    rel_diag_json = diag_json_path.relative_to(repo_root).as_posix() if safe_relative_to(diag_json_path, repo_root) else str(diag_json_path)
-    print("\nObservabilidad GENERATE:")
-    print(f"- Combos con senales: {len(generate_diag_records)}")
-    print(f"- Reporte MD: {rel_diag_md}")
-    print(f"- Reporte JSON: {rel_diag_json}")
-    if generate_diag_records:
-        print("- Top senales (score desc):")
-        ranked = sorted(generate_diag_records, key=lambda r: int(r.get("score", 0)), reverse=True)
-        for rec in ranked[:10]:
-            m = rec["metrics"]
-            print(
-                "  * "
-                f"{rec['cve']} {rec['model_alias']} {rec['level']} ({rec['seed_profile']}): "
-                f"score={rec['score']} "
-                f"empty={m['empty_response_warnings']} json={m['json_parse_errors']} "
-                f"no_mut={m['generate_no_mutations']} unknown_ops={m['unknown_mutation_ops']} "
-                f"gen_fail={m['llm_generation_failed']} timeouts={m['llm_timeout_errors']} "
-                f"xml_err={m['xml_parser_errors']}"
-            )
-    state["generate_diagnostics"] = {
-        "combos_with_signal": len(generate_diag_records),
-        "report_md": rel_diag_md,
-        "report_json": rel_diag_json,
-    }
+    if args.no_generate_diagnostics:
+        print("\nObservabilidad GENERATE: desactivada por --no-generate-diagnostics")
+        state["generate_diagnostics"] = {"disabled": True}
+    else:
+        session_id = str(state.get("session_id", dt.datetime.now().strftime("%Y%m%d_%H%M%S")))
+        diag_json_path, diag_md_path = write_generate_diagnostics_artifacts(
+            runs_root,
+            session_id,
+            generate_diag_records,
+            inspected=len(combos),
+            pending=len(pending),
+            executed_ok=len(executed_ok),
+            failed=len(failed),
+        )
+        rel_diag_md = diag_md_path.relative_to(repo_root).as_posix() if safe_relative_to(diag_md_path, repo_root) else str(diag_md_path)
+        rel_diag_json = diag_json_path.relative_to(repo_root).as_posix() if safe_relative_to(diag_json_path, repo_root) else str(diag_json_path)
+        print("\nObservabilidad GENERATE:")
+        print(f"- Combos con senales: {len(generate_diag_records)}")
+        print(f"- Reporte MD: {rel_diag_md}")
+        print(f"- Reporte JSON: {rel_diag_json}")
+        if generate_diag_records:
+            print("- Top senales (score desc):")
+            ranked = sorted(generate_diag_records, key=lambda r: int(r.get("score", 0)), reverse=True)
+            for rec in ranked[:10]:
+                m = rec["metrics"]
+                print(
+                    "  * "
+                    f"{rec['cve']} {rec['model_alias']} {rec['level']} ({rec['seed_profile']}): "
+                    f"score={rec['score']} "
+                    f"empty={m['empty_response_warnings']} json={m['json_parse_errors']} "
+                    f"no_mut={m['generate_no_mutations']} unknown_ops={m['unknown_mutation_ops']} "
+                    f"gen_fail={m['llm_generation_failed']} timeouts={m['llm_timeout_errors']} "
+                    f"xml_err={m['xml_parser_errors']}"
+                )
+        state["generate_diagnostics"] = {
+            "combos_with_signal": len(generate_diag_records),
+            "report_md": rel_diag_md,
+            "report_json": rel_diag_json,
+        }
 
     if dry_run:
         print("\nComandos finales (dry-run):")
