@@ -172,6 +172,14 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
+    # zstd + deepseek-v4-pro (L0 pending hotspot): repeated max-token empty
+    # payloads and timeout loops in GENERATE. Force compact, direct output.
+    ("CVE-2022-4899_zstd", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "2200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
 }
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
@@ -307,6 +315,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-24724_cmark-gfm", "gemini-3-flash-preview", "L3"),
     ("CVE-2022-4899_zstd", "gemini-3-flash-preview", "L3"),
     ("CVE-2023-39804_gnutar", "gemini-3-flash-preview", "L3"),
+    ("CVE-2025-26623_exiv2", "gemini-3-flash-preview", "L3"),
     ("CVE-2025-49014_jq", "gemini-3-flash-preview", "L3"),
     # Validated L3 completions (2026-05-14): deepseek-v4-pro.
     ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L3"),
@@ -453,6 +462,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2025-26623_exiv2", "deepseek-v4-pro", "L1"),
     ("CVE-2025-49014_jq", "deepseek-v4-pro", "L1"),
     ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L1"),
+    ("CVE-2023-39804_gnutar", "qwen3-coder-next", "L1"),
     ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L1"),
     ("CVE-2024-57970_libarchive", "ministral-3-8b", "L1"),
     ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L1"),
@@ -465,6 +475,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L0"),
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L0"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L0"),
+    ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L0"),
     ("CVE-2024-57970_libarchive", "gemini-3-flash-preview", "L0"),
     ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L0"),
     ("CVE-2016-9827_libming", "qwen3-coder-next", "L0"),
