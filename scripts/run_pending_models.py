@@ -188,6 +188,14 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
+    # libarchive + deepseek-v4-pro (L0 hotspot): repeated max-token empty
+    # responses and timeout loops in GENERATE; keep output compact/direct.
+    ("CVE-2024-57970_libarchive", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
 }
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
@@ -484,6 +492,9 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L0"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L0"),
     ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L0"),
+    ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L0"),
+    # CVE-2024-4323 has two seed profiles; this key marks both L0 runs done.
+    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L0"),
     ("CVE-2024-57970_libarchive", "gemini-3-flash-preview", "L0"),
     ("CVE-2014-2525_libyaml", "qwen3-coder-next", "L0"),
     ("CVE-2016-9827_libming", "qwen3-coder-next", "L0"),
