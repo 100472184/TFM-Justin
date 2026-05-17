@@ -156,6 +156,9 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "CVE-2024-25062_libxml2": {
         "LLM_GENERATE_MAX_TOKENS": "1400",
         "LLM_GENERATE_TIMEOUT": "120",
+        # Keep retries bounded for this historically unstable track.
+        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_GENERATE_JSON_RETRIES": "1",
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
@@ -664,6 +667,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2025-26623_exiv2", "glm-5.1", "L0"),
     ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L0"),
     ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L0"),
+    ("CVE-2024-57970_libarchive", "ministral-3-8b", "L0"),
     # Validated upload/audit (2026-05-15): 38 completadas staged, 0 anomalas.
     # Add missing unique keys so they are not rescheduled automatically.
     ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L2"),
@@ -713,10 +717,6 @@ EXCLUDED_CVES: dict[str, str] = {
     # L1 campaign with glm-5.1 shows prolonged low-signal progress with repeated
     # generate timeouts and parser-only failures; defer until dedicated guardrails.
     "CVE-2023-29469_libxml2": "excluded-policy:temporary-quarantine-libxml2-2026-05-13",
-    # Temporary quarantine (2026-05-15):
-    # High generate instability/noise for this legacy libxml2 track across models.
-    # Keep out of automatic scheduling until a dedicated, deterministic strategy is ready.
-    "CVE-2024-25062_libxml2": "excluded-policy:temporary-quarantine-libxml2-2026-05-15",
 }
 
 # Per-combo temporary exclusions.
@@ -930,7 +930,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--no-generate-diagnostics",
         action="store_true",
-        help="No crear ni mostrar reportes RUN_PENDING_MODELS_GENERATE_DIAGNOSTICS_*.",
+        help=(
+            "Compatibilidad legacy: la observabilidad GENERATE se muestra en "
+            "consola y ya no guarda reportes RUN_PENDING_MODELS_GENERATE_DIAGNOSTICS_*."
+        ),
     )
     p.add_argument(
         "--provider-failure-streak-limit",
@@ -1696,72 +1699,6 @@ def has_generate_diag_signal(metrics: dict[str, int]) -> bool:
         "generate_retry_attempts",
     ]
     return any(metrics.get(k, 0) > 0 for k in tracked)
-
-
-def write_generate_diagnostics_artifacts(
-    runs_root: Path,
-    session_id: str,
-    records: list[dict[str, Any]],
-    *,
-    inspected: int,
-    pending: int,
-    executed_ok: int,
-    failed: int,
-) -> tuple[Path, Path]:
-    json_path = runs_root / f"RUN_PENDING_MODELS_GENERATE_DIAGNOSTICS_{session_id}.json"
-    md_path = runs_root / f"RUN_PENDING_MODELS_GENERATE_DIAGNOSTICS_{session_id}.md"
-
-    payload = {
-        "session_id": session_id,
-        "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
-        "summary": {
-            "inspected": inspected,
-            "pending": pending,
-            "executed_ok": executed_ok,
-            "failed": failed,
-            "combos_with_signal": len(records),
-        },
-        "records": records,
-    }
-    json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    lines: list[str] = [
-        "# Run Pending Models - Generate Diagnostics",
-        "",
-        f"- Session: `{session_id}`",
-        f"- Generated at: `{payload['generated_at']}`",
-        f"- Inspected combos: `{inspected}`",
-        f"- Pending combos: `{pending}`",
-        f"- Executed OK: `{executed_ok}`",
-        f"- Failed: `{failed}`",
-        f"- Combos with generate-signal: `{len(records)}`",
-        "",
-        "## Top Signals",
-    ]
-    if not records:
-        lines.append("- No generate instability signals detected in captured outputs.")
-    else:
-        ranked = sorted(records, key=lambda r: int(r.get("score", 0)), reverse=True)
-        for rec in ranked[:40]:
-            lines.append(
-                "- "
-                f"{rec['cve']} {rec['model_alias']} {rec['level']} ({rec['seed_profile']}): "
-                f"score={rec['score']}, "
-                f"empty={rec['metrics']['empty_response_warnings']}, "
-                f"json={rec['metrics']['json_parse_errors']}, "
-                f"no_mut={rec['metrics']['generate_no_mutations']}, "
-                f"unknown_ops={rec['metrics']['unknown_mutation_ops']}, "
-                f"gen_fail={rec['metrics']['llm_generation_failed']}, "
-                f"timeouts={rec['metrics']['llm_timeout_errors']}, "
-                f"xml_err={rec['metrics']['xml_parser_errors']}, "
-                f"seed_val={rec['metrics']['seed_validation_failures']}, "
-                f"task_guard={rec['metrics']['task_guard_failures']}, "
-                f"retries={rec['metrics']['generate_retry_attempts']}, "
-                f"max_tok={rec['metrics']['max_token_observed']} "
-                f"(hits={rec['metrics']['max_token_response_hits']})"
-            )
-    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return json_path, md_path
 
 
 def normalize_run_anomalies(repo_root: Path, cve: str, anomalies: list[str], output: str) -> list[str]:
@@ -2733,45 +2670,28 @@ def main() -> int:
         for combo, reason in failed:
             print(f"- {combo.cve} {combo.model_alias} {combo.level} ({combo.seed_profile}) [{reason}]")
 
-    if args.no_generate_diagnostics:
-        print("\nObservabilidad GENERATE: desactivada por --no-generate-diagnostics")
-        state["generate_diagnostics"] = {"disabled": True}
-    else:
-        session_id = str(state.get("session_id", dt.datetime.now().strftime("%Y%m%d_%H%M%S")))
-        diag_json_path, diag_md_path = write_generate_diagnostics_artifacts(
-            runs_root,
-            session_id,
-            generate_diag_records,
-            inspected=len(combos),
-            pending=len(pending),
-            executed_ok=len(executed_ok),
-            failed=len(failed),
-        )
-        rel_diag_md = diag_md_path.relative_to(repo_root).as_posix() if safe_relative_to(diag_md_path, repo_root) else str(diag_md_path)
-        rel_diag_json = diag_json_path.relative_to(repo_root).as_posix() if safe_relative_to(diag_json_path, repo_root) else str(diag_json_path)
-        print("\nObservabilidad GENERATE:")
-        print(f"- Combos con senales: {len(generate_diag_records)}")
-        print(f"- Reporte MD: {rel_diag_md}")
-        print(f"- Reporte JSON: {rel_diag_json}")
-        if generate_diag_records:
-            print("- Top senales (score desc):")
-            ranked = sorted(generate_diag_records, key=lambda r: int(r.get("score", 0)), reverse=True)
-            for rec in ranked[:10]:
-                m = rec["metrics"]
-                print(
-                    "  * "
-                    f"{rec['cve']} {rec['model_alias']} {rec['level']} ({rec['seed_profile']}): "
-                    f"score={rec['score']} "
-                    f"empty={m['empty_response_warnings']} json={m['json_parse_errors']} "
-                    f"no_mut={m['generate_no_mutations']} unknown_ops={m['unknown_mutation_ops']} "
-                    f"gen_fail={m['llm_generation_failed']} timeouts={m['llm_timeout_errors']} "
-                    f"xml_err={m['xml_parser_errors']}"
-                )
-        state["generate_diagnostics"] = {
-            "combos_with_signal": len(generate_diag_records),
-            "report_md": rel_diag_md,
-            "report_json": rel_diag_json,
-        }
+    print("\nObservabilidad GENERATE:")
+    print(f"- Combos con senales: {len(generate_diag_records)}")
+    print("- Persistencia de reportes: desactivada (solo consola).")
+    if generate_diag_records:
+        print("- Top senales (score desc):")
+        ranked = sorted(generate_diag_records, key=lambda r: int(r.get("score", 0)), reverse=True)
+        for rec in ranked[:10]:
+            m = rec["metrics"]
+            print(
+                "  * "
+                f"{rec['cve']} {rec['model_alias']} {rec['level']} ({rec['seed_profile']}): "
+                f"score={rec['score']} "
+                f"empty={m['empty_response_warnings']} json={m['json_parse_errors']} "
+                f"no_mut={m['generate_no_mutations']} unknown_ops={m['unknown_mutation_ops']} "
+                f"gen_fail={m['llm_generation_failed']} timeouts={m['llm_timeout_errors']} "
+                f"xml_err={m['xml_parser_errors']}"
+            )
+    state["generate_diagnostics"] = {
+        "combos_with_signal": len(generate_diag_records),
+        "persisted_artifacts": False,
+        "legacy_flag_no_generate_diagnostics": bool(args.no_generate_diagnostics),
+    }
 
     if dry_run:
         print("\nComandos finales (dry-run):")
