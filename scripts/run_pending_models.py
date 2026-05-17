@@ -335,14 +335,6 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
-    ("CVE-2024-57970_libarchive", "ollama/ministral-3:8b"): {
-        "LLM_GENERATE_MAX_TOKENS": "1600",
-        "LLM_GENERATE_TIMEOUT": "120",
-        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
-        "LLM_MAX_GENERATE_ATTEMPTS": "4",
-        "LLM_GENERATE_JSON_RETRIES": "1",
-        "LLM_GENERATE_HISTORY_WINDOW": "1",
-    },
 }
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
