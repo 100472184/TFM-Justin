@@ -99,6 +99,37 @@ OLLAMA_MODEL_ENV_OVERRIDES: dict[str, dict[str, str]] = {
         # Mirror Gemini stabilization for long JSON mutation payloads.
         "LLM_GENERATE_MAX_TOKENS": "3200",
     },
+    # Remaining campaign models: keep GENERATE compact to reduce repeated
+    # max-token empty responses/timeouts in long L0/L1 batches.
+    "ollama/glm-5.1": {
+        "OLLAMA_GENERATE_FORMAT_JSON": "1",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_MAX_TOKENS": "2200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    "ollama/qwen3-coder-next": {
+        "OLLAMA_GENERATE_FORMAT_JSON": "1",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_MAX_TOKENS": "2200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    "ollama/ministral-3:8b": {
+        "OLLAMA_GENERATE_FORMAT_JSON": "1",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_MAX_TOKENS": "2200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # gpt-oss keeps medium effort for compatibility on Ollama endpoint.
+    "ollama/gpt-oss:20b": {
+        "OLLAMA_GENERATE_FORMAT_JSON": "1",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "medium",
+        "LLM_GENERATE_MAX_TOKENS": "2200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
 }
 
 # CVE-wide targeted env overrides (apply to all Ollama models for that task).
@@ -210,6 +241,75 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "LLM_GENERATE_MAX_TOKENS": "2000",
         "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # Remaining L0 campaign sweep (2026-05-17): apply moderate compact-profile
+    # per pending pair to prevent repeated max-token empty loops/timeouts while
+    # keeping model-specific behavior (avoid over-hard global changes).
+    ("CVE-2022-4899_zstd", "ollama/glm-5.1"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2023-39804_gnutar", "ollama/glm-5.1"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2024-4323_fluentbit", "ollama/glm-5.1"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2024-57970_libarchive", "ollama/glm-5.1"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2025-26623_exiv2", "ollama/glm-5.1"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2024-4323_fluentbit", "ollama/qwen3-coder-next"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2024-57970_libarchive", "ollama/qwen3-coder-next"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2024-4323_fluentbit", "ollama/gpt-oss:20b"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "medium",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2024-57970_libarchive", "ollama/gpt-oss:20b"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "medium",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2024-4323_fluentbit", "ollama/ministral-3:8b"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2024-57970_libarchive", "ollama/ministral-3:8b"): {
+        "LLM_GENERATE_MAX_TOKENS": "2000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
 }
@@ -503,6 +603,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2014-2525_libyaml", "glm-5.1", "L0"),
     ("CVE-2016-9827_libming", "glm-5.1", "L0"),
     ("CVE-2021-32292_jsonc", "glm-5.1", "L0"),
+    ("CVE-2022-24724_cmark-gfm", "glm-5.1", "L0"),
     ("CVE-2025-49014_jq", "glm-5.1", "L0"),
     ("CVE-2014-2525_libyaml", "deepseek-v4-pro", "L0"),
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L0"),
