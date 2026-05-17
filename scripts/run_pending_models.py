@@ -934,6 +934,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="No crear ni mostrar reportes RUN_PENDING_MODELS_GENERATE_DIAGNOSTICS_*.",
     )
+    p.add_argument(
+        "--provider-failure-streak-limit",
+        type=int,
+        default=8,
+        help=(
+            "Aborta el batch cuando se detectan >= N senales consecutivas de "
+            "fallo proveedor/cuota en outputs (default: 8, 0=desactivar)."
+        ),
+    )
     return p.parse_args()
 
 
@@ -1621,6 +1630,41 @@ def extract_generate_diagnostics(output: str) -> dict[str, int]:
     return metrics
 
 
+def provider_failure_signal_count(output: str) -> int:
+    """
+    Count likely provider-side failure signals (quota/credit exhaustion and
+    repeated empty-generation loops) in captured pipeline output.
+    """
+    text = (output or "").lower()
+
+    explicit_markers = [
+        "insufficient credit",
+        "insufficient credits",
+        "insufficient quota",
+        "quota exceeded",
+        "rate limit exceeded",
+        "payment required",
+        "billing",
+        "credit balance",
+    ]
+    repeated_markers = [
+        "warning: empty response from llm",
+        "note: empty response hit max_tokens",
+        "error: llm generation failed:",
+        "litellm.apiconnectionerror",
+        "litellm.timeout",
+        "connection timed out after",
+    ]
+
+    score = 0
+    # Explicit billing/quota hints are stronger evidence.
+    for marker in explicit_markers:
+        score += text.count(marker) * 3
+    for marker in repeated_markers:
+        score += text.count(marker)
+    return score
+
+
 def generate_diag_score(metrics: dict[str, int]) -> int:
     """
     Weighted score to rank combos by generate instability severity.
@@ -2275,6 +2319,7 @@ def main() -> int:
     anomalous: list[tuple[Combo, list[str], str]] = []
     generate_diag_records: list[dict[str, Any]] = []
     blocked_cves_runtime: dict[str, str] = {}
+    provider_failure_streak = 0
 
     for combo in pending:
         if combo.cve in blocked_cves_runtime:
@@ -2413,6 +2458,28 @@ def main() -> int:
             log("Interrupcion manual detectada (Ctrl+C). Abortando batch de forma segura.")
             break
         output = run_res.output
+        provider_signals = provider_failure_signal_count(output)
+        if provider_signals > 0:
+            provider_failure_streak += provider_signals
+        else:
+            provider_failure_streak = 0
+        if (
+            args.provider_failure_streak_limit > 0
+            and provider_failure_streak >= args.provider_failure_streak_limit
+        ):
+            msg = (
+                "provider-failure-streak-limit:"
+                f"{provider_failure_streak}/{args.provider_failure_streak_limit}"
+            )
+            failed.append((combo, msg))
+            update_combo_state(state, combo, "failed", msg)
+            save_state(state_path, state)
+            log(
+                "ERROR posible fin de creditos/cuota proveedor: "
+                f"streak={provider_failure_streak} (limite={args.provider_failure_streak_limit}). "
+                "Abortando batch para evitar saturar salida."
+            )
+            break
         generate_metrics = extract_generate_diagnostics(output)
         if has_generate_diag_signal(generate_metrics):
             score = generate_diag_score(generate_metrics)
