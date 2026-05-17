@@ -434,8 +434,19 @@ def run_benchmark(
         if project_name:
             cmd.extend(["-p", project_name])
         cmd.extend([
-            "-f", str(compose_file), 
+            "-f", str(compose_file),
             "run", "--rm", "--no-deps", "--pull=never",
+        ])
+
+        # CVE-2024-25062 uses XInclude with companion inc_*.xml fixtures.
+        # Mount task seeds into /input so relative hrefs (e.g., inc_x.xml)
+        # remain resolvable after mutation, then overlay the mutated seed file.
+        if task_id == "CVE-2024-25062_libxml2":
+            task_seeds_dir = repo_root / "tasks" / task_id / "seeds"
+            if task_seeds_dir.exists():
+                cmd.extend(["-v", f"{task_seeds_dir.resolve()}:/input:ro"])
+
+        cmd.extend([
             "-v", f"{seed_path.resolve()}:/input/{seed_path.name}:ro",
             service,
             f"/input/{seed_path.name}"  # Pass the path inside container as argument if service expects it
@@ -782,7 +793,7 @@ def _task_specific_seed_guard(task_id: str, level: str, seed_bytes: bytes, exten
                 return False, f"libxml2-xinclude guard: unexpected extension {extension}"
             try:
                 import xml.etree.ElementTree as ET
-                ET.fromstring(seed_bytes)
+                root = ET.fromstring(seed_bytes)
             except Exception as e:
                 return False, f"libxml2-xinclude guard: XML not well-formed ({_one_line(e, 120)})"
             raw = bytes(seed_bytes)
@@ -790,6 +801,34 @@ def _task_specific_seed_guard(task_id: str, level: str, seed_bytes: bytes, exten
                 return False, "libxml2-xinclude guard: missing canonical xmlns:xi URI"
             if b"<xi:include" not in raw:
                 return False, "libxml2-xinclude guard: missing xi:include element"
+            xi_ns = "http://www.w3.org/2001/XInclude"
+            includes = root.findall(f".//{{{xi_ns}}}include")
+            if not includes:
+                return False, "libxml2-xinclude guard: no xi:include nodes after parse"
+            allowed_hrefs = {
+                "inc.xml",
+                "inc2.xml",
+                "inc_x.xml",
+                "inc_v2.xml",
+                "inc_valid.xml",
+                "inc_final.xml",
+                "inc_crash.xml",
+                "inc_deterministic.xml",
+                "inc_backtrack_v4.xml",
+            }
+            for node in includes:
+                href = (node.get("href") or "").strip()
+                if not href:
+                    return False, "libxml2-xinclude guard: xi:include missing href"
+                if (
+                    ":" in href
+                    or href.startswith("/")
+                    or "\\" in href
+                    or ".." in href
+                ):
+                    return False, f"libxml2-xinclude guard: disallowed href '{_one_line(href, 80)}'"
+                if href not in allowed_hrefs:
+                    return False, f"libxml2-xinclude guard: unknown local href '{_one_line(href, 80)}'"
         return True, ""
 
     if extension.lower() != ".json":
@@ -1931,8 +1970,19 @@ def run_pipeline(
         # Save command for reproducibility (reflects actual execution)
         compose_path = repo_root / "tasks" / task_id / "compose.yml"
         repro_header = f"# Run ID: {run_id}\n# Project: {project_name}\n# Iteration: {iteration}\n\n"
-        cmd_vuln = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never -v {seed_file.resolve()}:/input/seed.bin:ro {service}"
-        cmd_fixed = f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never -v {seed_file.resolve()}:/input/seed.bin:ro {fixed_service}"
+        extra_input_mount = ""
+        if task_id == "CVE-2024-25062_libxml2":
+            task_seeds_dir = repo_root / "tasks" / task_id / "seeds"
+            if task_seeds_dir.exists():
+                extra_input_mount = f"-v {task_seeds_dir.resolve()}:/input:ro "
+        cmd_vuln = (
+            f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never "
+            f"{extra_input_mount}-v {seed_file.resolve()}:/input/seed.bin:ro {service}"
+        )
+        cmd_fixed = (
+            f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never "
+            f"{extra_input_mount}-v {seed_file.resolve()}:/input/seed.bin:ro {fixed_service}"
+        )
         cmd_eval = f"python -m scripts.bench evaluate {task_id} --seed {seed_file}"
         write_text(iter_dir / "command.txt", f"{repro_header}# Vulnerable version (exact command):\n{cmd_vuln}\n\n# Fixed version:\n{cmd_fixed}\n\n# Evaluate (simplified):\n{cmd_eval}")
         

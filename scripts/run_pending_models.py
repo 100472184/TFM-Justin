@@ -185,6 +185,27 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
 # Use this map only for hot spots where a task still needs per-model
 # specialization after generic CVE controls.
 OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
+    # libxml2 (CVE-2024-25062) + gemini-3-flash-preview:
+    # frequent malformed/truncated JSON payloads in GENERATE at token ceiling.
+    # Force compact direct output and disable reasoning traces.
+    ("CVE-2024-25062_libxml2", "ollama/gemini-3-flash-preview"): {
+        "LLM_GENERATE_MAX_TOKENS": "1000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # libxml2 (CVE-2024-25062) + deepseek-v4-pro:
+    # repeated empty-response loops exactly at max token budget.
+    ("CVE-2024-25062_libxml2", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "900",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
     # cmark-gfm + deepseek-v4-pro is especially prone to 3200-token empty
     # responses/timeouts. Keep thinking disabled (root cause mitigation),
     # but allow a larger token budget and multi-iteration history so L1 can
