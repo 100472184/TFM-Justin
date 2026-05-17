@@ -666,6 +666,12 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L0"),
     ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L0"),
     ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L0"),
+    ("CVE-2022-4899_zstd", "glm-5.1", "L0"),
+    ("CVE-2023-39804_gnutar", "glm-5.1", "L0"),
+    ("CVE-2024-57970_libarchive", "glm-5.1", "L0"),
+    ("CVE-2025-26623_exiv2", "glm-5.1", "L0"),
+    ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L0"),
+    ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L0"),
     # Validated upload/audit (2026-05-15): 38 completadas staged, 0 anomalas.
     # Add missing unique keys so they are not rescheduled automatically.
     ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L2"),
