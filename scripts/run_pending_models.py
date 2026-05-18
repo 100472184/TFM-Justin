@@ -959,10 +959,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--provider-failure-streak-limit",
         type=int,
-        default=8,
+        default=None,
         help=(
-            "Aborta el batch cuando se detectan >= N senales consecutivas de "
-            "fallo proveedor/cuota en outputs (default: 8, 0=desactivar)."
+            "Aborta el batch cuando se detectan >= N senales de fallo "
+            "proveedor/cuota en un combo. Default dinamico por nivel: "
+            "L3/15iters=20, L2/L1=30, L0=40. 0=desactivar."
         ),
     )
     return p.parse_args()
@@ -1687,6 +1688,36 @@ def provider_failure_signal_count(output: str) -> int:
     return score
 
 
+def default_provider_failure_limit_for_combo(combo: Combo) -> int:
+    """
+    Dynamic cutoff tuned by campaign depth to avoid over-sensitive aborts.
+    Requested policy:
+    - L3 / 15 iterations -> 20
+    - L2 / L1 -> 30
+    - L0 -> 40
+    """
+    if combo.level == "L0":
+        return 40
+    if combo.level in {"L1", "L2"}:
+        return 30
+    if combo.max_iters <= 15:
+        return 20
+    return 30
+
+
+def effective_provider_failure_limit(
+    combo: Combo,
+    cli_limit: int | None,
+) -> tuple[int, str]:
+    """
+    Resolve effective failure limit for a combo.
+    Returns (limit, source), where source is "cli" or "dynamic".
+    """
+    if cli_limit is None:
+        return default_provider_failure_limit_for_combo(combo), "dynamic"
+    return int(cli_limit), "cli"
+
+
 def generate_diag_score(metrics: dict[str, int]) -> int:
     """
     Weighted score to rank combos by generate instability severity.
@@ -2275,7 +2306,6 @@ def main() -> int:
     anomalous: list[tuple[Combo, list[str], str]] = []
     generate_diag_records: list[dict[str, Any]] = []
     blocked_cves_runtime: dict[str, str] = {}
-    provider_failure_streak = 0
 
     for combo in pending:
         if combo.cve in blocked_cves_runtime:
@@ -2298,6 +2328,15 @@ def main() -> int:
             f"Pendiente -> CVE={combo.cve} model={combo.model_alias} "
             f"level={combo.level} max_iters={combo.max_iters} seed_profile={combo.seed_profile}"
         )
+        provider_failure_limit, provider_failure_limit_source = effective_provider_failure_limit(
+            combo, args.provider_failure_streak_limit
+        )
+        if provider_failure_limit > 0:
+            log(
+                "INFO provider-failure-limit:"
+                f"{provider_failure_limit} ({provider_failure_limit_source}) "
+                f"para {combo.cve} {combo.model_alias} {combo.level}"
+            )
 
         if dry_run:
             log(f"DRY-RUN plan: run + rename -> {dest}")
@@ -2415,24 +2454,21 @@ def main() -> int:
             break
         output = run_res.output
         provider_signals = provider_failure_signal_count(output)
-        if provider_signals > 0:
-            provider_failure_streak += provider_signals
-        else:
-            provider_failure_streak = 0
         if (
-            args.provider_failure_streak_limit > 0
-            and provider_failure_streak >= args.provider_failure_streak_limit
+            provider_failure_limit > 0
+            and provider_signals >= provider_failure_limit
         ):
             msg = (
                 "provider-failure-streak-limit:"
-                f"{provider_failure_streak}/{args.provider_failure_streak_limit}"
+                f"{provider_signals}/{provider_failure_limit}"
             )
             failed.append((combo, msg))
             update_combo_state(state, combo, "failed", msg)
             save_state(state_path, state)
             log(
                 "ERROR posible fin de creditos/cuota proveedor: "
-                f"streak={provider_failure_streak} (limite={args.provider_failure_streak_limit}). "
+                f"score={provider_signals} (limite={provider_failure_limit}, "
+                f"source={provider_failure_limit_source}). "
                 "Abortando batch para evitar saturar salida."
             )
             break
