@@ -438,18 +438,24 @@ def run_benchmark(
             "run", "--rm", "--no-deps", "--pull=never",
         ])
 
-        # CVE-2024-25062 uses XInclude with companion inc_*.xml fixtures.
-        # Mount task seeds into /input so relative hrefs (e.g., inc_x.xml)
-        # remain resolvable after mutation, then overlay the mutated seed file.
+        container_seed_arg = f"/input/{seed_path.name}"
+        mount_target = f"/input/{seed_path.name}"
+
+        # CVE-2024-25062 needs companion inc_*.xml fixtures available in /input.
+        # Use a stable target filename that already exists in mounted task seeds,
+        # avoiding OCI init failures when Docker tries to create mount points on
+        # a read-only bind mount with iteration-specific filenames.
         if task_id == "CVE-2024-25062_libxml2":
             task_seeds_dir = repo_root / "tasks" / task_id / "seeds"
             if task_seeds_dir.exists():
                 cmd.extend(["-v", f"{task_seeds_dir.resolve()}:/input:ro"])
+                mount_target = "/input/seed_pipeline.xml"
+                container_seed_arg = "/input/seed_pipeline.xml"
 
         cmd.extend([
-            "-v", f"{seed_path.resolve()}:/input/{seed_path.name}:ro",
+            "-v", f"{seed_path.resolve()}:{mount_target}:ro",
             service,
-            f"/input/{seed_path.name}"  # Pass the path inside container as argument if service expects it
+            container_seed_arg,  # Pass the path inside container as argument if service expects it
         ])
         
         # Run container with --rm (auto-cleanup) and capture output directly
@@ -1971,17 +1977,21 @@ def run_pipeline(
         compose_path = repo_root / "tasks" / task_id / "compose.yml"
         repro_header = f"# Run ID: {run_id}\n# Project: {project_name}\n# Iteration: {iteration}\n\n"
         extra_input_mount = ""
+        repro_mount_target = f"/input/{seed_file.name}"
+        repro_seed_arg = f"/input/{seed_file.name}"
         if task_id == "CVE-2024-25062_libxml2":
             task_seeds_dir = repo_root / "tasks" / task_id / "seeds"
             if task_seeds_dir.exists():
                 extra_input_mount = f"-v {task_seeds_dir.resolve()}:/input:ro "
+                repro_mount_target = "/input/seed_pipeline.xml"
+                repro_seed_arg = "/input/seed_pipeline.xml"
         cmd_vuln = (
             f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never "
-            f"{extra_input_mount}-v {seed_file.resolve()}:/input/seed.bin:ro {service}"
+            f"{extra_input_mount}-v {seed_file.resolve()}:{repro_mount_target}:ro {service} {repro_seed_arg}"
         )
         cmd_fixed = (
             f"docker compose -p {project_name} -f {compose_path} run --rm --no-deps --pull=never "
-            f"{extra_input_mount}-v {seed_file.resolve()}:/input/seed.bin:ro {fixed_service}"
+            f"{extra_input_mount}-v {seed_file.resolve()}:{repro_mount_target}:ro {fixed_service} {repro_seed_arg}"
         )
         cmd_eval = f"python -m scripts.bench evaluate {task_id} --seed {seed_file}"
         write_text(iter_dir / "command.txt", f"{repro_header}# Vulnerable version (exact command):\n{cmd_vuln}\n\n# Fixed version:\n{cmd_fixed}\n\n# Evaluate (simplified):\n{cmd_eval}")
