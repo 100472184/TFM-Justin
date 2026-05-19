@@ -759,6 +759,40 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2022-4899_zstd", "gemini-3-flash-preview", "L0"),
     ("CVE-2023-39804_gnutar", "gemini-3-flash-preview", "L0"),
     ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L0"),
+    # CVE-2024-25062/libxml2 sweep (2026-05-19):
+    # keep completed/validated pairs out of the queue even when runs/ is not
+    # perfectly synchronized between Windows/Kali.
+    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L3"),
+    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L3"),
+    ("CVE-2024-25062_libxml2", "glm-5.1", "L3"),
+    ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L3"),
+    ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L3"),
+    ("CVE-2024-25062_libxml2", "ministral-3-8b", "L3"),
+    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L2"),
+    ("CVE-2024-25062_libxml2", "glm-5.1", "L2"),
+    ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L2"),
+    ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L2"),
+    ("CVE-2024-25062_libxml2", "ministral-3-8b", "L2"),
+    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L1"),
+    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L1"),
+    ("CVE-2024-25062_libxml2", "glm-5.1", "L1"),
+    ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L1"),
+    ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L1"),
+    ("CVE-2024-25062_libxml2", "ministral-3-8b", "L1"),
+    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L0"),
+    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L0"),
+}
+
+# Force re-scheduling for specific combos even if local run dirs or hardcoded
+# baseline would classify them as existing.
+FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
+    # Reported failed runs: keep pending for retry.
+    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L2"),
+    ("CVE-2024-25062_libxml2", "glm-5.1", "L0"),
+    ("CVE-2024-25062_libxml2", "ministral-3-8b", "L0"),
+    # Requested manual re-run of late unstaged L0 entries.
+    ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L0"),
+    ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L0"),
 }
 
 # Guardrail note:
@@ -1446,6 +1480,8 @@ def combo_key(combo: Combo) -> str:
 
 
 def combo_in_hardcoded_baseline(combo: Combo) -> bool:
+    if (combo.cve, combo.model_alias, combo.level) in FORCE_PENDING_COMBOS:
+        return False
     # CVE-2024-4323 has two seed profiles. For L0, keep seed_new_op schedulable
     # even if L0 is hardcoded from seed_crash completion.
     if (
@@ -1455,6 +1491,10 @@ def combo_in_hardcoded_baseline(combo: Combo) -> bool:
     ):
         return False
     return (combo.cve, combo.model_alias, combo.level) in HARDCODED_EXISTING_COMBOS
+
+
+def combo_is_forced_pending(combo: Combo) -> bool:
+    return (combo.cve, combo.model_alias, combo.level) in FORCE_PENDING_COMBOS
 
 
 def resolve_service_for_combo(combo: Combo) -> str:
@@ -2318,6 +2358,9 @@ def main() -> int:
         excluded, excluded_reason = combo_is_policy_excluded(combo)
         if excluded:
             existing.append((combo, excluded_reason))
+            continue
+        if combo_is_forced_pending(combo):
+            pending.append(combo)
             continue
         done, reason = find_existing_level_run(
             runs_root,
