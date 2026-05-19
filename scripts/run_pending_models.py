@@ -154,10 +154,10 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
     },
     # libxml2 legacy task: reduce GENERATE drift and long strategy replies.
     "CVE-2024-25062_libxml2": {
-        "LLM_GENERATE_MAX_TOKENS": "1400",
+        "LLM_GENERATE_MAX_TOKENS": "1600",
         "LLM_GENERATE_TIMEOUT": "120",
         # Keep retries bounded for this historically unstable track.
-        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
         "LLM_GENERATE_JSON_RETRIES": "1",
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
@@ -189,19 +189,59 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
     # frequent malformed/truncated JSON payloads in GENERATE at token ceiling.
     # Force compact direct output and disable reasoning traces.
     ("CVE-2024-25062_libxml2", "ollama/gemini-3-flash-preview"): {
-        "LLM_GENERATE_MAX_TOKENS": "1000",
+        "LLM_GENERATE_MAX_TOKENS": "1400",
         "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
-        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
         "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     # libxml2 (CVE-2024-25062) + deepseek-v4-pro:
     # repeated empty-response loops exactly at max token budget.
     ("CVE-2024-25062_libxml2", "ollama/deepseek-v4-pro"): {
-        "LLM_GENERATE_MAX_TOKENS": "900",
+        "LLM_GENERATE_MAX_TOKENS": "1200",
         "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # libxml2 (CVE-2024-25062) + glm-5.1:
+    # recurring 1400-token empty loops in GENERATE. Force compact direct output.
+    ("CVE-2024-25062_libxml2", "ollama/glm-5.1"): {
+        "LLM_GENERATE_MAX_TOKENS": "1200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # libxml2 (CVE-2024-25062) + qwen3-coder-next:
+    # same empty-at-cap pattern; keep concise JSON-only outputs.
+    ("CVE-2024-25062_libxml2", "ollama/qwen3-coder-next"): {
+        "LLM_GENERATE_MAX_TOKENS": "1200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # libxml2 (CVE-2024-25062) + ministral-3:8b:
+    # compact mode to minimize truncation and malformed JSON.
+    ("CVE-2024-25062_libxml2", "ollama/ministral-3:8b"): {
+        "LLM_GENERATE_MAX_TOKENS": "1000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # libxml2 (CVE-2024-25062) + gpt-oss:20b:
+    # keep gpt-oss compatible reasoning level while reducing long outputs.
+    ("CVE-2024-25062_libxml2", "ollama/gpt-oss:20b"): {
+        "LLM_GENERATE_MAX_TOKENS": "1400",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         "LLM_MAX_GENERATE_ATTEMPTS": "3",
         "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
@@ -1667,25 +1707,30 @@ def provider_failure_signal_count(output: str) -> int:
         "quota exceeded",
         "rate limit exceeded",
         "payment required",
-        "billing",
         "credit balance",
+        "resource has been exhausted",
+        "402 payment required",
+        "429 too many requests",
     ]
-    repeated_markers = [
-        "warning: empty response from llm",
-        "note: empty response hit max_tokens",
-        "error: llm generation failed:",
-        "litellm.apiconnectionerror",
-        "litellm.timeout",
-        "connection timed out after",
-    ]
+    # Strong evidence of exhausted credits/quota: abort quickly.
+    explicit_hits = sum(text.count(marker) for marker in explicit_markers)
+    if explicit_hits > 0:
+        return min(explicit_hits * 50, 300)
 
-    score = 0
-    # Explicit billing/quota hints are stronger evidence.
-    for marker in explicit_markers:
-        score += text.count(marker) * 3
-    for marker in repeated_markers:
-        score += text.count(marker)
-    return score
+    # No explicit quota markers:
+    # - DO NOT count max-token/empty loops toward provider exhaustion cutoff.
+    # - Only count harder provider/network failure patterns.
+    gen_fail_hits = min(text.count("error: llm generation failed:"), 8)
+    api_conn_hits = min(text.count("litellm.apiconnectionerror"), 8)
+    timeout_hits = min(
+        text.count("litellm.timeout")
+        + text.count("connection timed out after")
+        + text.count("read timed out"),
+        12,
+    )
+    retry_hits = min(len(re.findall(r"retry attempt \d+/\d+", text)), 8)
+    score = gen_fail_hits + (api_conn_hits * 2) + (timeout_hits * 2) + max(0, retry_hits - 4)
+    return min(score, 24)
 
 
 def default_provider_failure_limit_for_combo(combo: Combo) -> int:
@@ -2129,7 +2174,20 @@ def build_run_env(
                 if effective_value != value:
                     env[key] = value
                     sanitized.append(f"{key}={value}")
-            per_task_overrides = OLLAMA_CVE_MODEL_ENV_OVERRIDES.get((cve, model_spec), {})
+            per_task_overrides: dict[str, str] = {}
+            model_candidates = [model_spec]
+            if model_spec.startswith("ollama/"):
+                model_candidates.append(model_spec.split("/", 1)[1])
+            model_alias = next(
+                (alias for alias, spec in MODEL_SPECS.items() if spec == model_spec),
+                None,
+            )
+            if model_alias:
+                model_candidates.append(model_alias)
+            for model_key in model_candidates:
+                per_task_overrides = OLLAMA_CVE_MODEL_ENV_OVERRIDES.get((cve, model_key), {})
+                if per_task_overrides:
+                    break
             for key, value in per_task_overrides.items():
                 effective_value = env.get(key, "").strip()
                 if effective_value != value:
