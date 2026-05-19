@@ -181,6 +181,23 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
     },
 }
 
+# Additional guardrails that are applied only when a combo is executed against
+# the standard `target-vuln` service (not direct harnesses).
+SERVICE_SENSITIVE_ENV_OVERRIDES_BY_CVE: dict[str, dict[str, str]] = {
+    # CVE-2023-29469:
+    # - L3 intentionally uses target-vuln-direct (white-box direct harness).
+    # - L2/L1/L0 use target-vuln and are sensitive to long/thought-heavy
+    #   generation loops; keep JSON compact and retries bounded.
+    "CVE-2023-29469_libxml2": {
+        "LLM_GENERATE_MAX_TOKENS": "1200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+}
+
 # CVE+model targeted env overrides.
 # Use this map only for hot spots where a task still needs per-model
 # specialization after generic CVE controls.
@@ -567,6 +584,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2023-29469_libxml2", "qwen3-coder-next", "L3"),
     ("CVE-2023-29469_libxml2", "gpt-oss-20b", "L3"),
     ("CVE-2023-29469_libxml2", "ministral-3-8b", "L3"),
+    ("CVE-2023-29469_libxml2", "gemini-3-flash-preview", "L3"),
     ("CVE-2023-39804_gnutar", "glm-5.1", "L3"),
     ("CVE-2023-39804_gnutar", "qwen3-coder-next", "L3"),
     ("CVE-2023-39804_gnutar", "gpt-oss-20b", "L3"),
@@ -2283,6 +2301,31 @@ def build_run_env(
     return env, _compact_sanitized_env_entries(sanitized)
 
 
+def apply_service_sensitive_env_overrides(
+    env: dict[str, str],
+    sanitized: list[str],
+    *,
+    cve: str,
+    model_spec: str,
+    service: str,
+) -> list[str]:
+    """
+    Apply extra env guardrails for sensitive CVEs only when using
+    the standard target-vuln service.
+    """
+    if service != "target-vuln":
+        return _compact_sanitized_env_entries(sanitized)
+    if not model_spec.startswith("ollama/"):
+        return _compact_sanitized_env_entries(sanitized)
+    overrides = SERVICE_SENSITIVE_ENV_OVERRIDES_BY_CVE.get(cve, {})
+    for key, value in overrides.items():
+        effective_value = env.get(key, "").strip()
+        if effective_value != value:
+            env[key] = value
+            sanitized.append(f"{key}={value}")
+    return _compact_sanitized_env_entries(sanitized)
+
+
 def build_combos(
     runs_root: Path,
     cves_filter: set[str],
@@ -2508,7 +2551,14 @@ def main() -> int:
             log(f"DRY-RUN seed-policy: {seed_reason}")
             if service != "target-vuln":
                 log(f"DRY-RUN service-override: {combo.cve} {combo.level} -> {service}")
-            _, sanitized = build_run_env(combo.model_spec, local_llm_env, cve=combo.cve)
+            env_preview, sanitized = build_run_env(combo.model_spec, local_llm_env, cve=combo.cve)
+            sanitized = apply_service_sensitive_env_overrides(
+                env_preview,
+                sanitized,
+                cve=combo.cve,
+                model_spec=combo.model_spec,
+                service=service,
+            )
             if sanitized:
                 log(f"DRY-RUN env-sanitize: {','.join(sanitized)}")
             log(f"DRY-RUN mv: <new_run_dir> -> {dest}")
@@ -2558,6 +2608,7 @@ def main() -> int:
         before_dirs = {p.name for p in model_dir.iterdir() if p.is_dir()}
         source_existed_before = dest.name in before_dirs
 
+        service = resolve_service_for_combo(combo)
         cmd = [
             sys.executable,
             "-u",
@@ -2572,16 +2623,22 @@ def main() -> int:
             "--model",
             combo.model_spec,
             "--service",
-            resolve_service_for_combo(combo),
+            service,
             "--kill-running-containers-after-iter",
             "--seed",
             str(seed_path),
         ]
         run_env, sanitized_env = build_run_env(combo.model_spec, local_llm_env, cve=combo.cve)
+        sanitized_env = apply_service_sensitive_env_overrides(
+            run_env,
+            sanitized_env,
+            cve=combo.cve,
+            model_spec=combo.model_spec,
+            service=service,
+        )
         if sanitized_env:
             log(f"INFO env sanitizado para {combo.model_spec}: {','.join(sanitized_env)}")
         log(f"INFO {seed_reason} para {combo.cve}")
-        service = resolve_service_for_combo(combo)
         if service != "target-vuln":
             log(f"INFO service-override: {combo.cve} {combo.level} -> {service}")
         update_combo_state(state, combo, "running", "launched")
