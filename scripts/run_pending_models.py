@@ -769,6 +769,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L3"),
     ("CVE-2024-25062_libxml2", "ministral-3-8b", "L3"),
     ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L2"),
+    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L2"),
     ("CVE-2024-25062_libxml2", "glm-5.1", "L2"),
     ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L2"),
     ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L2"),
@@ -781,18 +782,17 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-25062_libxml2", "ministral-3-8b", "L1"),
     ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L0"),
     ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L0"),
+    ("CVE-2024-25062_libxml2", "glm-5.1", "L0"),
+    ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L0"),
+    ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L0"),
+    ("CVE-2024-25062_libxml2", "ministral-3-8b", "L0"),
 }
 
 # Force re-scheduling for specific combos even if local run dirs or hardcoded
 # baseline would classify them as existing.
 FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
-    # Reported failed runs: keep pending for retry.
-    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L2"),
-    ("CVE-2024-25062_libxml2", "glm-5.1", "L0"),
-    ("CVE-2024-25062_libxml2", "ministral-3-8b", "L0"),
-    # Requested manual re-run of late unstaged L0 entries.
-    ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L0"),
-    ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L0"),
+    # Intentionally empty: all known CVE-2024-25062 retry candidates have been
+    # promoted to validated/hardcoded existing combos.
 }
 
 # Guardrail note:
