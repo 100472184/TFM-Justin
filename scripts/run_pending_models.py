@@ -831,14 +831,21 @@ EXCLUDED_CVES: dict[str, str] = {
 # Combos that must be considered "existing" only when their canonical
 # destination exists and validates. Legacy run dirs do not satisfy this rule.
 CANONICAL_REQUIRED_COMBOS: set[tuple[str, str, str]] = {
-    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L3"),
-    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L3"),
-    ("CVE-2024-25062_libxml2", "glm-5.1", "L3"),
 }
 
-# Per-combo temporary exclusions.
-# Keep empty unless a specific unstable combo must be paused temporarily.
-EXCLUDED_COMBOS: dict[tuple[str, str, str, str], str] = {}
+# Per-combo exclusions.
+# Methodology rule for CVE-2024-25062:
+# - L3 should only be executed with direct harness (`target-vuln-direct`).
+# - That task compose currently exposes only target-vuln/target-fixed, so L3
+#   combos are excluded to avoid invalid methodology runs.
+EXCLUDED_COMBOS: dict[tuple[str, str, str, str], str] = {
+    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
+    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
+    ("CVE-2024-25062_libxml2", "glm-5.1", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
+    ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
+    ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
+    ("CVE-2024-25062_libxml2", "ministral-3-8b", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
+}
 
 # Service overrides by (CVE, level). These are methodological controls where a
 # level intentionally targets a different harness/service.
