@@ -808,10 +808,14 @@ EXCLUDED_CVES: dict[str, str] = {
     # Reproduction is not reliable in the current setup/harness architecture.
     # See: runs/CVE-2016-5314_libtiff/reproduction_analysis.md
     "CVE-2016-5314_libtiff": "excluded-policy:reproduction-unreliable",
-    # Temporary quarantine (2026-05-13):
-    # L1 campaign with glm-5.1 shows prolonged low-signal progress with repeated
-    # generate timeouts and parser-only failures; defer until dedicated guardrails.
-    "CVE-2023-29469_libxml2": "excluded-policy:temporary-quarantine-libxml2-2026-05-13",
+}
+
+# Combos that must be considered "existing" only when their canonical
+# destination exists and validates. Legacy run dirs do not satisfy this rule.
+CANONICAL_REQUIRED_COMBOS: set[tuple[str, str, str]] = {
+    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L3"),
+    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L3"),
+    ("CVE-2024-25062_libxml2", "glm-5.1", "L3"),
 }
 
 # Per-combo temporary exclusions.
@@ -1495,6 +1499,36 @@ def combo_in_hardcoded_baseline(combo: Combo) -> bool:
 
 def combo_is_forced_pending(combo: Combo) -> bool:
     return (combo.cve, combo.model_alias, combo.level) in FORCE_PENDING_COMBOS
+
+
+def combo_requires_canonical_only(combo: Combo) -> bool:
+    return (combo.cve, combo.model_alias, combo.level) in CANONICAL_REQUIRED_COMBOS
+
+
+def find_existing_canonical_only_run(
+    runs_root: Path,
+    cve: str,
+    model_alias: str,
+    level: str,
+    seed_profile: str = "default",
+    expected_model: str | None = None,
+    expected_max_iters: int | None = None,
+) -> tuple[bool, str]:
+    dest = canonical_dest(runs_root, cve, model_alias, level, seed_profile=seed_profile)
+    if dest.is_dir():
+        ok, why = validate_run_dir(
+            dest,
+            cve,
+            level,
+            expected_model=expected_model,
+            expected_max_iters=expected_max_iters,
+        )
+        if ok:
+            return True, f"exists-canonical:{dest.name}"
+        return False, f"canonical-invalid:{why}"
+    if _path_is_tracked_in_git(runs_root.parent, dest):
+        return True, f"exists-canonical-index:{dest.name}"
+    return False, "canonical-missing"
 
 
 def resolve_service_for_combo(combo: Combo) -> str:
@@ -2358,6 +2392,21 @@ def main() -> int:
         excluded, excluded_reason = combo_is_policy_excluded(combo)
         if excluded:
             existing.append((combo, excluded_reason))
+            continue
+        if combo_requires_canonical_only(combo):
+            done, reason = find_existing_canonical_only_run(
+                runs_root,
+                combo.cve,
+                combo.model_alias,
+                combo.level,
+                seed_profile=combo.seed_profile,
+                expected_model=combo.model_spec,
+                expected_max_iters=combo.max_iters,
+            )
+            if done:
+                existing.append((combo, reason))
+            else:
+                pending.append(combo)
             continue
         if combo_is_forced_pending(combo):
             pending.append(combo)
