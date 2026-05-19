@@ -193,7 +193,6 @@ SERVICE_SENSITIVE_ENV_OVERRIDES_BY_CVE: dict[str, dict[str, str]] = {
         "LLM_GENERATE_TIMEOUT": "120",
         "LLM_MAX_GENERATE_ATTEMPTS": "3",
         "LLM_GENERATE_JSON_RETRIES": "1",
-        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
 }
@@ -263,6 +262,58 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
+    # libxml2 (CVE-2023-29469): campaign remainder control profile.
+    # This CVE has shown repeated max-token empty loops on L3/L2 for some
+    # models; force compact outputs to avoid burning budget.
+    ("CVE-2023-29469_libxml2", "ollama/gemini-3-flash-preview"): {
+        "LLM_GENERATE_MAX_TOKENS": "1400",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2023-29469_libxml2", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "1200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2023-29469_libxml2", "ollama/glm-5.1"): {
+        "LLM_GENERATE_MAX_TOKENS": "1200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2023-29469_libxml2", "ollama/qwen3-coder-next"): {
+        "LLM_GENERATE_MAX_TOKENS": "1200",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2023-29469_libxml2", "ollama/ministral-3:8b"): {
+        "LLM_GENERATE_MAX_TOKENS": "1000",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    # gpt-oss cannot use reasoning=none on this endpoint.
+    ("CVE-2023-29469_libxml2", "ollama/gpt-oss:20b"): {
+        "LLM_GENERATE_MAX_TOKENS": "1400",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "low",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
     # cmark-gfm + deepseek-v4-pro is especially prone to 3200-token empty
     # responses/timeouts. Keep thinking disabled (root cause mitigation),
     # but allow a larger token budget and multi-iteration history so L1 can
@@ -311,10 +362,10 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
     # zstd + deepseek-v4-pro (L0 pending hotspot): repeated max-token empty
     # payloads and timeout loops in GENERATE. Force compact, direct output.
     ("CVE-2022-4899_zstd", "ollama/deepseek-v4-pro"): {
-        "LLM_GENERATE_MAX_TOKENS": "1600",
+        "LLM_GENERATE_MAX_TOKENS": "1200",
         "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
-        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_MAX_GENERATE_ATTEMPTS": "3",
         "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
@@ -2326,10 +2377,17 @@ def apply_service_sensitive_env_overrides(
         return _compact_sanitized_env_entries(sanitized)
     overrides = SERVICE_SENSITIVE_ENV_OVERRIDES_BY_CVE.get(cve, {})
     for key, value in overrides.items():
+        normalized_value = value
+        if (
+            key == "OLLAMA_GENERATE_REASONING_EFFORT"
+            and "gpt-oss" in model_spec
+            and str(value).strip().lower() == "none"
+        ):
+            normalized_value = "low"
         effective_value = env.get(key, "").strip()
-        if effective_value != value:
-            env[key] = value
-            sanitized.append(f"{key}={value}")
+        if effective_value != normalized_value:
+            env[key] = normalized_value
+            sanitized.append(f"{key}={normalized_value}")
     return _compact_sanitized_env_entries(sanitized)
 
 
