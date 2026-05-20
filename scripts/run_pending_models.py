@@ -875,8 +875,14 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
 # Force re-scheduling for specific combos even if local run dirs or hardcoded
 # baseline would classify them as existing.
 FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
-    # Intentionally empty: all known CVE-2024-25062 retry candidates have been
-    # promoted to validated/hardcoded existing combos.
+    # CVE-2023-29469/libxml2 retries explicitly forced pending.
+    # These runs were flagged as critical anomalies (llm-stop-early) and must
+    # stay schedulable even if canonical paths are tracked in git index.
+    ("CVE-2023-29469_libxml2", "deepseek-v4-pro", "L2"),
+    ("CVE-2023-29469_libxml2", "glm-5.1", "L2"),
+    ("CVE-2023-29469_libxml2", "qwen3-coder-next", "L2"),
+    ("CVE-2023-29469_libxml2", "glm-5.1", "L1"),
+    ("CVE-2023-29469_libxml2", "glm-5.1", "L0"),
 }
 
 # Guardrail note:
