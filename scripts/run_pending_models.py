@@ -855,6 +855,21 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L0"),
     ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L0"),
     ("CVE-2024-25062_libxml2", "ministral-3-8b", "L0"),
+    # CVE-2023-29469/libxml2: completed+staged in interrupted batch.
+    # Keep these out of queue even when local runs/ sync is partial.
+    ("CVE-2023-29469_libxml2", "deepseek-v4-pro", "L3"),
+    ("CVE-2023-29469_libxml2", "glm-5.1", "L3"),
+    ("CVE-2023-29469_libxml2", "gemini-3-flash-preview", "L2"),
+    ("CVE-2023-29469_libxml2", "gemini-3-flash-preview", "L1"),
+    ("CVE-2023-29469_libxml2", "deepseek-v4-pro", "L1"),
+    ("CVE-2023-29469_libxml2", "qwen3-coder-next", "L1"),
+    ("CVE-2023-29469_libxml2", "gpt-oss-20b", "L1"),
+    ("CVE-2023-29469_libxml2", "ministral-3-8b", "L1"),
+    ("CVE-2023-29469_libxml2", "gemini-3-flash-preview", "L0"),
+    ("CVE-2023-29469_libxml2", "deepseek-v4-pro", "L0"),
+    ("CVE-2023-29469_libxml2", "qwen3-coder-next", "L0"),
+    ("CVE-2023-29469_libxml2", "gpt-oss-20b", "L0"),
+    ("CVE-2023-29469_libxml2", "ministral-3-8b", "L0"),
 }
 
 # Force re-scheduling for specific combos even if local run dirs or hardcoded
