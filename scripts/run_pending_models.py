@@ -875,8 +875,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
 # Force re-scheduling for specific combos even if local run dirs or hardcoded
 # baseline would classify them as existing.
 FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
-    # Keep this combo schedulable until user confirms final canonical run.
-    ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L0"),
+    # Intentionally empty.
 }
 
 # Guardrail note:
@@ -1295,6 +1294,34 @@ def canonical_dest(
     return model_dir / f"{level}_{cve}"
 
 
+def canonical_dest_variants(
+    runs_root: Path,
+    cve: str,
+    model_alias: str,
+    level: str,
+    seed_profile: str = "default",
+) -> list[Path]:
+    """
+    Canonical run-dir candidate names.
+    Supports plain canonical and prefixed variants introduced for labeling.
+    """
+    base = canonical_dest(runs_root, cve, model_alias, level, seed_profile=seed_profile)
+    names = [
+        base.name,
+        f"sucess_{base.name}",
+        f"failure_{base.name}",
+        f"success_{base.name}",
+    ]
+    seen: set[str] = set()
+    out: list[Path] = []
+    for n in names:
+        if n in seen:
+            continue
+        seen.add(n)
+        out.append(base.parent / n)
+    return out
+
+
 def _path_is_tracked_in_git(repo_root: Path, path: Path) -> bool:
     """
     Return True when at least one tracked file exists under `path` in git index.
@@ -1331,22 +1358,28 @@ def find_existing_level_run(
     profile_dir = _seed_profile_dirname(cve, seed_profile)
     if profile_dir:
         model_dir = model_dir / profile_dir
-    dest = canonical_dest(runs_root, cve, model_alias, level, seed_profile=seed_profile)
-    if dest.is_dir():
-        ok, why = validate_run_dir(
-            dest,
-            cve,
-            level,
-            expected_model=expected_model,
-            expected_max_iters=expected_max_iters,
-        )
-        if ok:
-            return True, f"exists-canonical:{dest.name}"
-        return False, f"canonical-invalid:{why}"
-    # If local runs/ were cleaned up but canonical run files are still tracked
-    # in git, treat them as existing to avoid false re-scheduling.
-    if _path_is_tracked_in_git(runs_root.parent, dest):
-        return True, f"exists-canonical-index:{dest.name}"
+    for dest in canonical_dest_variants(
+        runs_root,
+        cve,
+        model_alias,
+        level,
+        seed_profile=seed_profile,
+    ):
+        if dest.is_dir():
+            ok, why = validate_run_dir(
+                dest,
+                cve,
+                level,
+                expected_model=expected_model,
+                expected_max_iters=expected_max_iters,
+            )
+            if ok:
+                return True, f"exists-canonical:{dest.name}"
+            return False, f"canonical-invalid:{why}"
+        # If local runs/ were cleaned up but canonical run files are still tracked
+        # in git, treat them as existing to avoid false re-scheduling.
+        if _path_is_tracked_in_git(runs_root.parent, dest):
+            return True, f"exists-canonical-index:{dest.name}"
     if not model_dir.is_dir():
         return False, "model-dir-missing"
 
@@ -1605,20 +1638,26 @@ def find_existing_canonical_only_run(
     expected_model: str | None = None,
     expected_max_iters: int | None = None,
 ) -> tuple[bool, str]:
-    dest = canonical_dest(runs_root, cve, model_alias, level, seed_profile=seed_profile)
-    if dest.is_dir():
-        ok, why = validate_run_dir(
-            dest,
-            cve,
-            level,
-            expected_model=expected_model,
-            expected_max_iters=expected_max_iters,
-        )
-        if ok:
-            return True, f"exists-canonical:{dest.name}"
-        return False, f"canonical-invalid:{why}"
-    if _path_is_tracked_in_git(runs_root.parent, dest):
-        return True, f"exists-canonical-index:{dest.name}"
+    for dest in canonical_dest_variants(
+        runs_root,
+        cve,
+        model_alias,
+        level,
+        seed_profile=seed_profile,
+    ):
+        if dest.is_dir():
+            ok, why = validate_run_dir(
+                dest,
+                cve,
+                level,
+                expected_model=expected_model,
+                expected_max_iters=expected_max_iters,
+            )
+            if ok:
+                return True, f"exists-canonical:{dest.name}"
+            return False, f"canonical-invalid:{why}"
+        if _path_is_tracked_in_git(runs_root.parent, dest):
+            return True, f"exists-canonical-index:{dest.name}"
     return False, "canonical-missing"
 
 
