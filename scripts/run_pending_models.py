@@ -765,6 +765,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2016-9827_libming", "deepseek-v4-pro", "L0"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L0"),
     ("CVE-2022-24724_cmark-gfm", "deepseek-v4-pro", "L0"),
+    ("CVE-2022-4899_zstd", "deepseek-v4-pro", "L0"),
     ("CVE-2025-49014_jq", "deepseek-v4-pro", "L0"),
     ("CVE-2023-39804_gnutar", "deepseek-v4-pro", "L0"),
     ("CVE-2025-26623_exiv2", "deepseek-v4-pro", "L0"),
@@ -875,14 +876,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
 # Force re-scheduling for specific combos even if local run dirs or hardcoded
 # baseline would classify them as existing.
 FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
-    # CVE-2023-29469/libxml2 retries explicitly forced pending.
-    # These runs were flagged as critical anomalies (llm-stop-early) and must
-    # stay schedulable even if canonical paths are tracked in git index.
-    ("CVE-2023-29469_libxml2", "deepseek-v4-pro", "L2"),
-    ("CVE-2023-29469_libxml2", "glm-5.1", "L2"),
-    ("CVE-2023-29469_libxml2", "qwen3-coder-next", "L2"),
-    ("CVE-2023-29469_libxml2", "glm-5.1", "L1"),
-    ("CVE-2023-29469_libxml2", "glm-5.1", "L0"),
+    # Intentionally empty: retries were completed and promoted to baseline.
 }
 
 # Guardrail note:
