@@ -1871,7 +1871,8 @@ def detect_run_anomalies(output: str) -> list[str]:
         add("harness-target-not-executable")
     if "invalid port: '11434:generatecontent'" in text:
         add("vertex-api-base-leak")
-    if "llm requested early stop" in text:
+    # Treat as anomaly only if the stop request was not explicitly ignored.
+    if "llm requested early stop" in text and "ignored by policy; continuing" not in text:
         add("llm-stop-early")
 
     # Container runtime errors that can still leave partial artifacts
@@ -2043,11 +2044,30 @@ def normalize_run_anomalies(repo_root: Path, cve: str, anomalies: list[str], out
     converge to valid seeds that reach VERIFY. In that case, do not mark the full run as anomalous.
     """
     uniq = list(dict.fromkeys(anomalies))
+    text = output or ""
+    text_l = text.lower()
+
+    # False-positive guard:
+    # - Some logs contain "LLM requested early stop (ignored by policy; continuing)".
+    # - In those cases the run is NOT an early stop and may still complete all iterations.
+    if "llm-stop-early" in uniq:
+        ignored_by_policy = "ignored by policy; continuing" in text_l
+        reached_max_iters = False
+        m_max = re.search(r"^\s*max iters:\s*(\d+)\s*$", text, flags=re.IGNORECASE | re.MULTILINE)
+        m_done = re.search(r"^\s*iterations:\s*(\d+)\s*$", text, flags=re.IGNORECASE | re.MULTILINE)
+        if m_max and m_done:
+            try:
+                reached_max_iters = int(m_done.group(1)) >= int(m_max.group(1))
+            except ValueError:
+                reached_max_iters = False
+        if ignored_by_policy or reached_max_iters:
+            uniq = [code for code in uniq if code != "llm-stop-early"]
+
     if (
         len(uniq) == 1
         and uniq[0] == "seed-nul-rejected"
         and _task_prefers_text_seed(repo_root, cve)
-        and "Testing vulnerable version..." in (output or "")
+        and "Testing vulnerable version..." in text
     ):
         return []
     return uniq
