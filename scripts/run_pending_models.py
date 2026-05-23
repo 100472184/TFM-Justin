@@ -881,34 +881,19 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
 # Force re-scheduling for specific combos even if local run dirs or hardcoded
 # baseline would classify them as existing.
 FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
-    # Fluent Bit leakage re-test campaign:
-    # schedule all levels again for all active models. Since this CVE has
-    # two seed profiles (seed_new_op + seed_crash), this yields 48 runs
-    # total (4 levels x 6 models x 2 seed profiles).
+    # Fluent Bit leakage re-test campaign (trimmed after partial completion):
+    # - 34 combos (L3/L2 all models + L1 for 5 models) were already completed
+    #   and staged in interrupted batch.
+    # - Keep only truly pending forced combos:
+    #   * all L0 models (12 runs due to 2 seed profiles)
+    #   * ministral-3-8b at L1 (2 runs due to 2 seed profiles)
     ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L0"),
-    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L1"),
-    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L2"),
-    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L3"),
     ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L0"),
-    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L1"),
-    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L2"),
-    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L3"),
     ("CVE-2024-4323_fluentbit", "glm-5.1", "L0"),
-    ("CVE-2024-4323_fluentbit", "glm-5.1", "L1"),
-    ("CVE-2024-4323_fluentbit", "glm-5.1", "L2"),
-    ("CVE-2024-4323_fluentbit", "glm-5.1", "L3"),
     ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L0"),
-    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L1"),
-    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L2"),
-    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L3"),
     ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L0"),
-    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L1"),
-    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L2"),
-    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L3"),
     ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L0"),
     ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L1"),
-    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L2"),
-    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L3"),
 }
 
 # Guardrail note:
