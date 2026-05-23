@@ -577,12 +577,6 @@ CVE_SEED_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
     },
 }
 
-# Optional run-dir label suffixes for dedicated re-test campaigns.
-# NOTE: this is intentionally scoped to fluentbit leakage validation.
-RUN_NAME_SUFFIX_BY_CVE: dict[str, str] = {
-    "CVE-2024-4323_fluentbit": "_testing_leakage",
-}
-
 # Baseline hardcodeada a partir del estado analizado previamente.
 # Se usa para no depender de tener runs sincronizado en Kali.
 HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
@@ -881,34 +875,7 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
 # Force re-scheduling for specific combos even if local run dirs or hardcoded
 # baseline would classify them as existing.
 FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
-    # Fluent Bit leakage re-test campaign:
-    # schedule all levels again for all active models. Since this CVE has
-    # two seed profiles (seed_new_op + seed_crash), this yields 48 runs
-    # total (4 levels x 6 models x 2 seed profiles).
-    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L0"),
-    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L1"),
-    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L2"),
-    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L3"),
-    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L0"),
-    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L1"),
-    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L2"),
-    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L3"),
-    ("CVE-2024-4323_fluentbit", "glm-5.1", "L0"),
-    ("CVE-2024-4323_fluentbit", "glm-5.1", "L1"),
-    ("CVE-2024-4323_fluentbit", "glm-5.1", "L2"),
-    ("CVE-2024-4323_fluentbit", "glm-5.1", "L3"),
-    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L0"),
-    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L1"),
-    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L2"),
-    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L3"),
-    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L0"),
-    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L1"),
-    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L2"),
-    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L3"),
-    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L0"),
-    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L1"),
-    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L2"),
-    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L3"),
+    # Intentionally empty.
 }
 
 # Guardrail note:
@@ -1324,8 +1291,7 @@ def canonical_dest(
     profile_dir = _seed_profile_dirname(cve, seed_profile)
     if profile_dir:
         model_dir = model_dir / profile_dir
-    run_name_suffix = RUN_NAME_SUFFIX_BY_CVE.get(cve, "")
-    return model_dir / f"{level}_{cve}{run_name_suffix}"
+    return model_dir / f"{level}_{cve}"
 
 
 def canonical_dest_variants(
