@@ -1,7 +1,7 @@
 # Research Papers Tracker (Notion Export)
 
 - Source CSV: `d:\JustainoTitaino\Descargas\fd6dd5a2-7dd9-42a4-87c7-6a5c0a8ae677_ExportBlock-eb360096-9e0e-4757-befa-75a8f93a428f\ExportBlock-eb360096-9e0e-4757-befa-75a8f93a428f-Part-1\Research Papers Tracker 2d3b8407f98f800899e8f16a6de1481b_all.csv`
-- Last update (generated): 2026-05-23 17:05:45
+- Generated on: 2026-05-23 17:19:23
 - Total papers: **9**
 
 ## Quick Stats
@@ -21,17 +21,17 @@
 
 ## Comparative Table
 
-| # | Year | Title | Venue / Type | Method Class | Vulnerability Focus | LLMs evaluated | Paper | Code/Data |
+| # | Year | Title | Venue / Type | Method Class | Vulnerability Focus | LLMs Evaluated | Paper | Code/Data |
 |---:|---:|---|---|---|---|---|---|---|
-| 1 | 2025 | PwnGPT: Automatic Exploit Generation Based on Large Language Models | Conference | LLM-based | Stack Overflow,Format String,Integer Overflow,Use-After-Fre... | qwen-plus, qwen-max, GPT-4o, OpenAI o1-preview | [link](https://aclanthology.org/2025.acl-long.562.pdf) | [link](https://github.com/aeg-hit/PwnGPT) |
+| 1 | 2025 | PwnGPT: Automatic Exploit Generation Based on Large Language Models | Conference | LLM-based | Stack Overflow,Format String,Integer Overflow,Use-After-Free,Heap Overflow | qwen-plus, qwen-max, GPT-4o, OpenAI o1-preview | [link](https://aclanthology.org/2025.acl-long.562.pdf) | [link](https://github.com/aeg-hit/PwnGPT) |
 | 2 | 2025 | LLM Agents for Automated Web Vulnerability Reproduction: Are We There Yet? | ArXiv | Agent-based | CSRF,Path Traversal,RCE,SQLI,SSRF,XSS | GPT-4.1; Claude-Sonnet-4; Gemini-2.5-Pro | [link](https://arxiv.org/pdf/2510.14700v1) | [link](https://figshare.com/s/7e55eaaaca0b0146ee62) |
-| 3 | 2025 | Good News for Script Kiddies? Evaluating Large Language Models for Automated Exploit Generation | ArXiv | LLM-based | Buffer Overflow,return-to-libc,Format String,Race Condition... | GPT-4o; GPT-4o-mini; Llama3 (8B); Dolphin-Mistral (7B); Dolphin-Phi (... | [link](https://arxiv.org/pdf/2505.01065) | [link](http://anonymous.4open.science/r/AEG) |
-| 4 | 2025 | From CVE Entries to Verifiable Exploits: An Automated Multi-Agent Framework for Reproducing CV... | ArXiv | Agent-based | Broad coverage across many ecosystems: in the large-scale e... | They evaluate "ten leading models" for integration and list them in T... | [link](https://arxiv.org/pdf/2509.01835) | https://www.notion.so... |
-| 5 | 2025 | CYBERGYM: Evaluating AI Agents' Real-World Cybersecurity Capabilities at Scale | ArXiv | Agent-based | Primarily C/C++ sanitizer-detectable issues (memory safety ... | Backbone LLMs evaluated (11 total): GPT-4.1; GPT-5; o4-mini; Claude-3... | [link](https://arxiv.org/pdf/2506.02548) | [link](https://huggingface.co/datasets/sunblaze-ucb/cybergym) |
-| 6 | 2025 | CVE-Bench: A Benchmark for AI Agents' Ability to Exploit Real-World Web Application Vulnerabil... | Conference | Agent-based | Web-application CVEs (open-source, platform-independent, re... | Primary model used for experiments: gpt-4o-2024-11-20. Additional bas... | [link](https://arxiv.org/pdf/2503.17332) | [link](https://github.com/uiuc-kang-lab/cve-bench) |
-| 7 | 2025 | Automated Vulnerability Validation and Verification: A Large Language Model Approach | ArXiv | LLM-based | Memory Overflow,DoS,Memory Corruption,RCE | GPT-4o; Qwen3-225B; DeepSeek V3; Mistral AI; Llama-3.3-70B; Gemini 2.... | [link](https://arxiv.org/pdf/2509.24037) | [link](https://github.com/arlotfi79/CVE_Experiments) |
-| 8 | 2025 | A Systematic Study on Generating Web Vulnerability Proof-of-Concepts Using Large Language Mode... | ArXiv | PoC generation | 100 reproducible real-world web CVEs spanning five CWE cate... | GPT-4o and DeepSeek-R1. | [link](https://arxiv.org/pdf/2510.10148v1) | https://www.notion.so... |
-| 9 | 2024 | LLM Agents can Autonomously Exploit One-day Vulnerabilities | ArXiv | Agent-based | One-day vulns,Privilege Escalation,ACIDRain,RCE | GPT-4; GPT-3.5; OpenHermes-2.5-Mistral-7B; LLaMA-2 Chat (70B/13B/7B);... | [link](https://arxiv.org/pdf/2404.08144) | https://www.notion.so... |
+| 3 | 2025 | Good News for Script Kiddies? Evaluating Large Language Models for Automated Exploit Generation | ArXiv | LLM-based | Buffer Overflow,return-to-libc,Format String,Race Condition,Dirty COW | GPT-4o; GPT-4o-mini; Llama3 (8B); Dolphin-Mistral (7B); Dolphin-Phi (2.7B). | [link](https://arxiv.org/pdf/2505.01065) | [link](http://anonymous.4open.science/r/AEG) |
+| 4 | 2025 | From CVE Entries to Verifiable Exploits: An Automated Multi-Agent Framework for Reproducing CVEs | ArXiv | Agent-based | Broad coverage across many ecosystems: in the large-scale evaluation they report reproduction acr... | They evaluate "ten leading models" for integration and list them in Table 3: o3, o4-mini, Claude ... | [link](https://arxiv.org/pdf/2509.01835) | https://www.notion.soThey state they "will open source" the framework/source code, logs (including agent conversations), and the dataset of 428 reproduced CVEs, but the paper itself does not provide a specific repository URL in the text shown. |
+| 5 | 2025 | CYBERGYM: Evaluating AI Agents' Real-World Cybersecurity Capabilities at Scale | ArXiv | Agent-based | Primarily C/C++ sanitizer-detectable issues (memory safety / undefined behavior). The benchmark c... | Backbone LLMs evaluated (11 total): GPT-4.1; GPT-5; o4-mini; Claude-3.7-Sonnet; Claude-Sonnet-4; ... | [link](https://arxiv.org/pdf/2506.02548) | [link](https://huggingface.co/datasets/sunblaze-ucb/cybergym) |
+| 6 | 2025 | CVE-Bench: A Benchmark for AI Agents' Ability to Exploit Real-World Web Application Vulnerabilities | Conference | Agent-based | Web-application CVEs (open-source, platform-independent, reproducible) from NVD, selected within ... | Primary model used for experiments: gpt-4o-2024-11-20. Additional baseline: T-Agent with Llama 3.... | [link](https://arxiv.org/pdf/2503.17332) | [link](https://github.com/uiuc-kang-lab/cve-bench) |
+| 7 | 2025 | Automated Vulnerability Validation and Verification: A Large Language Model Approach | ArXiv | LLM-based | Memory Overflow,DoS,Memory Corruption,RCE | GPT-4o; Qwen3-225B; DeepSeek V3; Mistral AI; Llama-3.3-70B; Gemini 2.5 Flash. | [link](https://arxiv.org/pdf/2509.24037) | [link](https://github.com/arlotfi79/CVE_Experiments) |
+| 8 | 2025 | A Systematic Study on Generating Web Vulnerability Proof-of-Concepts Using Large Language Models | ArXiv | PoC generation | 100 reproducible real-world web CVEs spanning five CWE categories: - CWE-79 (XSS) - CWE-89 (SQLi)... | GPT-4o and DeepSeek-R1. | [link](https://arxiv.org/pdf/2510.10148v1) | https://www.notion.soNot published. |
+| 9 | 2024 | LLM Agents can Autonomously Exploit One-day Vulnerabilities | ArXiv | Agent-based | One-day vulns,Privilege Escalation,ACIDRain,RCE | GPT-4; GPT-3.5; OpenHermes-2.5-Mistral-7B; LLaMA-2 Chat (70B/13B/7B); Mixtral-8x7B Instruct; Mist... | [link](https://arxiv.org/pdf/2404.08144) | https://www.notion.soNot provided in the document. |
 
 ## Detailed Paper Notes
 
@@ -41,10 +41,10 @@
 - Venue / Type: Conference
 - Method Class: LLM-based
 - Authors: Wanzong Peng; Lin Ye; Xuetao Du; Hongli Zhang; Dongyang Zhan; Yunting Zhang; Yicheng Guo; Chen Zhang
-- Paper link: https://aclanthology.org/2025.acl-long.562.pdf
-- Code / Data link: https://github.com/aeg-hit/PwnGPT
+- Paper: [paper](https://aclanthology.org/2025.acl-long.562.pdf)
+- Code / Data: [code/data](https://github.com/aeg-hit/PwnGPT)
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 LLM-based
 
 #### Paper Contribution
@@ -58,7 +58,7 @@ qwen-plus, qwen-max, GPT-4o, OpenAI o1-preview
 
 #### Evaluation Metrics
 Benchmark success counts across four capability tests (key info analysis, vulnerability location, exploit chain construction, code generation) over 19 challenges. 
-End-to-end exploit completion rate / number of challenges solved, comparing "direct LLM prompting" vs PwnGPT. Reported improvements include 26.3% -> 57.9% with o1-preview and 21.1% -> 36.8% with GPT-4o on their benchmark. 
+End-to-end exploit completion rate / number of challenges solved, comparing "direct LLM prompting" vs PwnGPT. Reported improvements include 26.3% → 57.9% with o1-preview and 21.1% → 36.8% with GPT-4o on their benchmark. 
 Verification-module impact measured by whether failed/non-executable exploits become executable after limited iterations (they report 3/30 becoming executable for qwen-plus, but none becoming fully feasible exploits).
 
 ### 2. LLM Agents for Automated Web Vulnerability Reproduction: Are We There Yet?
@@ -67,10 +67,10 @@ Verification-module impact measured by whether failed/non-executable exploits be
 - Venue / Type: ArXiv
 - Method Class: Agent-based
 - Authors: Bin Liu; Yanjie Zhao; Guoai Xu; Haoyu Wang
-- Paper link: https://arxiv.org/pdf/2510.14700v1
-- Code / Data link: https://figshare.com/s/7e55eaaaca0b0146ee62
+- Paper: [paper](https://arxiv.org/pdf/2510.14700v1)
+- Code / Data: [code/data](https://figshare.com/s/7e55eaaaca0b0146ee62)
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 LLM-agent-based vulnerability reproduction in a safe containerized setting with standardized prompts and structured JSON outputs. The study decomposes reproduction into four tasks (environment setup, vulnerability localization, PoC generation with verification, and end-to-end reproduction). Agents are restricted to command-line interactions (browser-based interactions prohibited), and outputs must include generated Docker artifacts, exploit PoC code, verification oracles, and a step-by-step reproduction document.
 
 #### Paper Contribution
@@ -84,7 +84,7 @@ GPT-4.1; Claude-Sonnet-4; Gemini-2.5-Pro
 
 #### Evaluation Metrics
 Environment Setup Success Rate.
- 
+
 Vulnerability Localization accuracy (Top-K, evaluated as Top-3) at file/function/line granularities. 
 2510.14700v1PoC Generation success split into Execution Success Rate vs Vulnerability Trigger Success Rate. 
 2510.14700v1End-to-End Success Rate reported as Success@1 and Success@3. 
@@ -99,10 +99,10 @@ Robustness analyses: "with vs without enhanced reasoning" (Figure 4) and authent
 - Venue / Type: ArXiv
 - Method Class: LLM-based
 - Authors: David Jin; Qian Fu; Yuekang Li
-- Paper link: https://arxiv.org/pdf/2505.01065
-- Code / Data link: http://anonymous.4open.science/r/AEG
+- Paper: [paper](https://arxiv.org/pdf/2505.01065)
+- Code / Data: [code/data](http://anonymous.4open.science/r/AEG)
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 LLM-based
 
 #### Paper Contribution
@@ -125,10 +125,10 @@ Robustness to memorization: performance drop from original labs to refactored la
 - Venue / Type: ArXiv
 - Method Class: Agent-based
 - Authors: Saad Ullah; Praneeth Balasubramanian; Wenbo Guo; Amanda Burnett; Hammond Pearce; Christopher Kruegel; Giovanni Vigna; Gianluca Stringhini
-- Paper link: https://arxiv.org/pdf/2509.01835
-- Code / Data link: https://www.notion.soThey state they "will open source" the framework/source code, logs (including agent conversations), and the dataset of 428 reproduced CVEs, but the paper itself does not provide a specific repository URL in the text shown.
+- Paper: [paper](https://arxiv.org/pdf/2509.01835)
+- Code / Data: https://www.notion.soThey state they "will open source" the framework/source code, logs (including agent conversations), and the dataset of 428 reproduced CVEs, but the paper itself does not provide a specific repository URL in the text shown.
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 CVE reproduction pipeline using four modules-Processor, Builder, Exploiter, and CTF Verifier-and within modules, developer + critic agents in an iterative ReAct-style loop ("self-critique") to improve reliability. The system builds a structured knowledge base from CVE resources, reconstructs the vulnerable environment, develops a PoC exploit, and then generates and validates a verifier that returns a "flag" when exploitation is confirmed.
 
 #### Paper Contribution
@@ -159,10 +159,10 @@ Robustness: ablations removing CVE context fields (advisory, patch commit, etc.)
 - Venue / Type: ArXiv
 - Method Class: Agent-based
 - Authors: Zhun Wang; Tianneng Shi; Jingxuan He; Matthew Cai; Jialin Zhang; Dawn Song
-- Paper link: https://arxiv.org/pdf/2506.02548
-- Code / Data link: https://huggingface.co/datasets/sunblaze-ucb/cybergym
+- Paper: [paper](https://arxiv.org/pdf/2506.02548)
+- Code / Data: [code/data](https://huggingface.co/datasets/sunblaze-ucb/cybergym)
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 This is PoC generation for vulnerability reproduction, not end-to-end exploit payload crafting. The core task is: agent receives a text vulnerability description + the pre-patch codebase, and iteratively generates a single raw input file (binary or text) to feed the target program. 
 
 The agent tests candidates via a provided script (http://submit.sh/) inside a modular, containerized environment. 
@@ -187,10 +187,10 @@ Main benchmark metric: success rate = % of instances where the agent generates a
 - Venue / Type: Conference
 - Method Class: Agent-based
 - Authors: Yuxuan Zhu; Antony Kellermann; Dylan Bowman; Philip Li; Akul Gupta; Adarsh Danda; Richard Fang; Conner Jensen; Eric Ihli; Jason Benn; Jet Geronimo; Avi Dhir; Sudhit Rao; Kaicheng Yu; Twm Stone; Daniel Kang
-- Paper link: https://arxiv.org/pdf/2503.17332
-- Code / Data link: https://github.com/uiuc-kang-lab/cve-bench
+- Paper: [paper](https://arxiv.org/pdf/2503.17332)
+- Code / Data: [code/data](https://github.com/uiuc-kang-lab/cve-bench)
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 Agent-driven exploitation in an isolated sandbox. For each CVE, CVE-Bench provides:
 
 - A containerized vulnerable web application (typically web-app container + database container + optional services; orchestrated via compose.yml). 
@@ -229,10 +229,10 @@ Failure-mode analysis: frequency of annotated failure modes (limited task unders
 - Venue / Type: ArXiv
 - Method Class: LLM-based
 - Authors: Alireza Lotfi; Charalampos Katsis; Elisa Bertino
-- Paper link: https://arxiv.org/pdf/2509.24037
-- Code / Data link: https://github.com/arlotfi79/CVE_Experiments
+- Paper: [paper](https://arxiv.org/pdf/2509.24037)
+- Code / Data: [code/data](https://github.com/arlotfi79/CVE_Experiments)
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 LLM-based
 
 #### Paper Contribution
@@ -259,10 +259,10 @@ Model comparison on a 10-CVE subset: GPT-4o is reported as the only model comple
 - Venue / Type: ArXiv
 - Method Class: PoC generation
 - Authors: Mengyao Zhao; Kaixuan Li; Lyuye Zhang; Wenjing Dang; Chenggong Ding; Sen Chen; Zheli Liu
-- Paper link: https://arxiv.org/pdf/2510.10148v1
-- Code / Data link: https://www.notion.soNot published.
+- Paper: [paper](https://arxiv.org/pdf/2510.10148v1)
+- Code / Data: https://www.notion.soNot published.
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 PoC generation (not "full exploit weaponization") driven by LLM prompting, evaluated progressively in four phases:
 1. baseline PoC generation from public artifacts across three disclosure scenarios,
 2. failure analysis by decomposing PoC generation into explicit sub-tasks (to localize where models fail),
@@ -300,10 +300,10 @@ Practical cost/time notes (experiment runtime/cost comparison between models) an
 - Venue / Type: ArXiv
 - Method Class: Agent-based
 - Authors: Richard Fang; Rohan Bindu; Akul Gupta; Daniel Kang
-- Paper link: https://arxiv.org/pdf/2404.08144
-- Code / Data link: https://www.notion.soNot provided in the document.
+- Paper: [paper](https://arxiv.org/pdf/2404.08144)
+- Code / Data: https://www.notion.soNot provided in the document.
 
-#### Approach (full)
+#### Approach (Raw from CSV)
 LLM-based autonomous exploitation via a single ReAct agent (LangChain; OpenAI Assistants API for OpenAI models) with tool access (web browsing interactions, terminal, web search, file editing, code interpreter) and access to the CVE description; the prompt is described as detailed but is withheld publicly for ethical reasons.
 
 #### Paper Contribution
@@ -319,4 +319,3 @@ GPT-4; GPT-3.5; OpenHermes-2.5-Mistral-7B; LLaMA-2 Chat (70B/13B/7B); Mixtral-8x
 Success rate: pass@1 and pass@5, manually judged exploitation success. 
 Cost: dollar cost estimated from token counts using OpenAI API prices "at the time of writing." 
 Additional analyses: success with and without CVE descriptions; fraction of correct vulnerability identification when CVE descriptions are removed; number of agent actions per vulnerability.
-
