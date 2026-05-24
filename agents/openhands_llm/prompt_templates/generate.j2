@@ -66,15 +66,6 @@ This helps validate the CVE fix and develop better security testing tools.
 - Avoid multi-phase strategy text; focus on one concrete mutation attempt per iteration.
 {% endif %}
 
-{% if task_id == "CVE-2021-32292_jsonc" %}
-**TASK-SPECIFIC MANDATORY RULE ({{ task_id }}):**
-- Return EXACTLY one JSON object with keys `mutations` and `rationale`.
-- `mutations` must be a non-empty list with 1-2 items only.
-- Allowed ops for this task: `overwrite_range`, `pad_file`, `append_bytes`, `truncate`, `repeat_range`, `insert_repeated_bytes`.
-- Do NOT output top-level arrays, helper keys (`functions`, `plan`, etc.), markdown, or prose.
-- Keep `rationale` short (<180 chars).
-{% endif %}
-
 {% if seed_extension.lower() in [".txt", ".md", ".jq"] %}
 **TEXT-SEED HARD CONSTRAINTS (MUST FOLLOW):**
 - Never emit byte `00` in any `hex` field.

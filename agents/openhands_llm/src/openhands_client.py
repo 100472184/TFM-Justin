@@ -898,39 +898,16 @@ class OpenHandsLLMClient:
                 if attempt < effective_max_retries:
                     # Try to repair JSON
                     compact_original = _compact_for_repair_prompt(content)
-                    if schema_kind == "generate":
-                        repair_prompt = (
-                            "The previous response was not valid JSON for GENERATE.\n"
-                            f"Error: {str(e)}\n"
-                            "Return ONLY ONE compact JSON object with this exact shape:\n"
-                            "{\"mutations\":[{\"op\":\"...\"}],\"rationale\":\"...\"}\n"
-                            "Rules:\n"
-                            "- `mutations` must be a non-empty list (1-2 items)\n"
-                            "- No top-level arrays\n"
-                            "- No markdown, no prose, no comments\n"
-                            f"Original response:\n{compact_original}"
-                        )
-                        messages = [
-                            {
-                                "role": "system",
-                                "content": (
-                                    "You must respond with valid compact JSON only. "
-                                    "Use exactly keys `mutations` and `rationale`."
-                                ),
-                            },
-                            {"role": "user", "content": repair_prompt},
-                        ]
-                    else:
-                        repair_prompt = (
-                            f"The previous response was not valid JSON. "
-                            f"Error: {str(e)}. "
-                            f"Please provide ONLY valid JSON without any markdown formatting. "
-                            f"Original response:\n{compact_original}"
-                        )
-                        messages = [
-                            {"role": "system", "content": "You must respond with valid JSON only."},
-                            {"role": "user", "content": repair_prompt}
-                        ]
+                    repair_prompt = (
+                        f"The previous response was not valid JSON. "
+                        f"Error: {str(e)}. "
+                        f"Please provide ONLY valid JSON without any markdown formatting. "
+                        f"Original response:\n{compact_original}"
+                    )
+                    messages = [
+                        {"role": "system", "content": "You must respond with valid JSON only."},
+                        {"role": "user", "content": repair_prompt}
+                    ]
                 else:
                     raise RuntimeError(
                         f"Failed to parse JSON response after {effective_max_retries + 1} attempts. "
