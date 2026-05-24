@@ -403,6 +403,16 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
+    # fluentbit + deepseek-v4-pro (L0/L1 hotspot): repeated max-token empty
+    # responses plus connection timeouts in GENERATE.
+    ("CVE-2024-4323_fluentbit", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "1600",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
     ("CVE-2024-4323_fluentbit", "ollama/glm-5.1"): {
         "LLM_GENERATE_MAX_TOKENS": "1600",
         "LLM_GENERATE_TIMEOUT": "120",
@@ -882,18 +892,16 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
 # baseline would classify them as existing.
 FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
     # Fluent Bit leakage re-test campaign (trimmed after partial completion):
-    # - 34 combos (L3/L2 all models + L1 for 5 models) were already completed
+    # - 38 combos (L3/L2 all models + L1 all models + gemini L0) are done
     #   and staged in interrupted batch.
     # - Keep only truly pending forced combos:
-    #   * all L0 models (12 runs due to 2 seed profiles)
-    #   * ministral-3-8b at L1 (2 runs due to 2 seed profiles)
-    ("CVE-2024-4323_fluentbit", "gemini-3-flash-preview", "L0"),
+    #   * L0 for deepseek/glm/qwen/gpt/ministral
+    #     (10 runs due to 2 seed profiles)
     ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L0"),
     ("CVE-2024-4323_fluentbit", "glm-5.1", "L0"),
     ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L0"),
     ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L0"),
     ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L0"),
-    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L1"),
 }
 
 # Guardrail note:
