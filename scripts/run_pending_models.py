@@ -942,7 +942,6 @@ FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
     # json-c leakage re-test campaign:
     # L3 (6/6) completed and staged; keep force-pending for L2/L1/L0 only.
     ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L2"),
-    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L2"),
     ("CVE-2021-32292_jsonc", "glm-5.1", "L2"),
     ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L2"),
     ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L2"),
