@@ -201,6 +201,25 @@ SERVICE_SENSITIVE_ENV_OVERRIDES_BY_CVE: dict[str, dict[str, str]] = {
 # Use this map only for hot spots where a task still needs per-model
 # specialization after generic CVE controls.
 OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
+    # json-c (CVE-2021-32292) leakage re-test:
+    # keep GENERATE compact for long L1/L0 campaigns and avoid 3200-token
+    # empty/timeout loops seen in prior batches.
+    ("CVE-2021-32292_jsonc", "ollama/gemini-3-flash-preview"): {
+        "LLM_GENERATE_MAX_TOKENS": "1600",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
+    ("CVE-2021-32292_jsonc", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "1600",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
     # libxml2 (CVE-2024-25062) + gemini-3-flash-preview:
     # frequent malformed/truncated JSON payloads in GENERATE at token ceiling.
     # Force compact direct output and disable reasoning traces.
@@ -591,6 +610,7 @@ CVE_SEED_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
 # NOTE: this is intentionally scoped to fluentbit leakage validation.
 RUN_NAME_SUFFIX_BY_CVE: dict[str, str] = {
     "CVE-2024-4323_fluentbit": "_testing_leakage",
+    "CVE-2021-32292_jsonc": "_testing_leakage",
 }
 
 # Baseline hardcodeada a partir del estado analizado previamente.
@@ -902,6 +922,32 @@ FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L0"),
     ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L0"),
     ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L0"),
+    # json-c leakage re-test campaign:
+    # force all 24 model/level combos even if baseline marks them as existing.
+    ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L3"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L3"),
+    ("CVE-2021-32292_jsonc", "glm-5.1", "L3"),
+    ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L3"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L3"),
+    ("CVE-2021-32292_jsonc", "ministral-3-8b", "L3"),
+    ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L2"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L2"),
+    ("CVE-2021-32292_jsonc", "glm-5.1", "L2"),
+    ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L2"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L2"),
+    ("CVE-2021-32292_jsonc", "ministral-3-8b", "L2"),
+    ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L1"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L1"),
+    ("CVE-2021-32292_jsonc", "glm-5.1", "L1"),
+    ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L1"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L1"),
+    ("CVE-2021-32292_jsonc", "ministral-3-8b", "L1"),
+    ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L0"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L0"),
+    ("CVE-2021-32292_jsonc", "glm-5.1", "L0"),
+    ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L0"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L0"),
+    ("CVE-2021-32292_jsonc", "ministral-3-8b", "L0"),
 }
 
 # Guardrail note:

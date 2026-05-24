@@ -403,6 +403,16 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
+    # fluentbit + deepseek-v4-pro (L0/L1 hotspot): repeated max-token empty
+    # responses plus connection timeouts in GENERATE.
+    ("CVE-2024-4323_fluentbit", "ollama/deepseek-v4-pro"): {
+        "LLM_GENERATE_MAX_TOKENS": "1600",
+        "LLM_GENERATE_TIMEOUT": "120",
+        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
+        "LLM_MAX_GENERATE_ATTEMPTS": "4",
+        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
+    },
     ("CVE-2024-4323_fluentbit", "ollama/glm-5.1"): {
         "LLM_GENERATE_MAX_TOKENS": "1600",
         "LLM_GENERATE_TIMEOUT": "120",
@@ -575,6 +585,12 @@ CVE_SEED_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
             },
         },
     },
+}
+
+# Optional run-dir label suffixes for dedicated re-test campaigns.
+# NOTE: this is intentionally scoped to fluentbit leakage validation.
+RUN_NAME_SUFFIX_BY_CVE: dict[str, str] = {
+    "CVE-2024-4323_fluentbit": "_testing_leakage",
 }
 
 # Baseline hardcodeada a partir del estado analizado previamente.
@@ -875,7 +891,17 @@ HARDCODED_EXISTING_COMBOS: set[tuple[str, str, str]] = {
 # Force re-scheduling for specific combos even if local run dirs or hardcoded
 # baseline would classify them as existing.
 FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
-    # Intentionally empty.
+    # Fluent Bit leakage re-test campaign (trimmed after partial completion):
+    # - 38 combos (L3/L2 all models + L1 all models + gemini L0) are done
+    #   and staged in interrupted batch.
+    # - Keep only truly pending forced combos:
+    #   * L0 for deepseek/glm/qwen/gpt/ministral
+    #     (10 runs due to 2 seed profiles)
+    ("CVE-2024-4323_fluentbit", "deepseek-v4-pro", "L0"),
+    ("CVE-2024-4323_fluentbit", "glm-5.1", "L0"),
+    ("CVE-2024-4323_fluentbit", "qwen3-coder-next", "L0"),
+    ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L0"),
+    ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L0"),
 }
 
 # Guardrail note:
@@ -1291,7 +1317,8 @@ def canonical_dest(
     profile_dir = _seed_profile_dirname(cve, seed_profile)
     if profile_dir:
         model_dir = model_dir / profile_dir
-    return model_dir / f"{level}_{cve}"
+    run_name_suffix = RUN_NAME_SUFFIX_BY_CVE.get(cve, "")
+    return model_dir / f"{level}_{cve}{run_name_suffix}"
 
 
 def canonical_dest_variants(
@@ -1837,7 +1864,8 @@ def detect_run_anomalies(output: str) -> list[str]:
         add("harness-target-not-executable")
     if "invalid port: '11434:generatecontent'" in text:
         add("vertex-api-base-leak")
-    if "llm requested early stop" in text:
+    # Treat as anomaly only if the stop request was not explicitly ignored.
+    if "llm requested early stop" in text and "ignored by policy; continuing" not in text:
         add("llm-stop-early")
 
     # Container runtime errors that can still leave partial artifacts
@@ -2009,11 +2037,30 @@ def normalize_run_anomalies(repo_root: Path, cve: str, anomalies: list[str], out
     converge to valid seeds that reach VERIFY. In that case, do not mark the full run as anomalous.
     """
     uniq = list(dict.fromkeys(anomalies))
+    text = output or ""
+    text_l = text.lower()
+
+    # False-positive guard:
+    # - Some logs contain "LLM requested early stop (ignored by policy; continuing)".
+    # - In those cases the run is NOT an early stop and may still complete all iterations.
+    if "llm-stop-early" in uniq:
+        ignored_by_policy = "ignored by policy; continuing" in text_l
+        reached_max_iters = False
+        m_max = re.search(r"^\s*max iters:\s*(\d+)\s*$", text, flags=re.IGNORECASE | re.MULTILINE)
+        m_done = re.search(r"^\s*iterations:\s*(\d+)\s*$", text, flags=re.IGNORECASE | re.MULTILINE)
+        if m_max and m_done:
+            try:
+                reached_max_iters = int(m_done.group(1)) >= int(m_max.group(1))
+            except ValueError:
+                reached_max_iters = False
+        if ignored_by_policy or reached_max_iters:
+            uniq = [code for code in uniq if code != "llm-stop-early"]
+
     if (
         len(uniq) == 1
         and uniq[0] == "seed-nul-rejected"
         and _task_prefers_text_seed(repo_root, cve)
-        and "Testing vulnerable version..." in (output or "")
+        and "Testing vulnerable version..." in text
     ):
         return []
     return uniq
