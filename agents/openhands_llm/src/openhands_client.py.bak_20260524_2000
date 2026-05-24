@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os
 import json
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 
 def _read_env_int(name: str, minimum: int | None = None, maximum: int | None = None) -> int | None:
@@ -417,134 +417,6 @@ def _has_generate_mutations(payload: object) -> bool:
     return False
 
 
-def _canonicalize_generate_op_name(raw_op: Any) -> str:
-    """Normalize common op aliases emitted by LLMs."""
-    op = str(raw_op or "").strip()
-    if not op:
-        return ""
-    alias_map = {
-        "overwrite": "overwrite_range",
-        "append": "append_bytes",
-        "pad": "pad_file",
-        "pad_end": "pad_file",
-        "pad_to": "pad_file",
-        "flip": "flip_bit",
-        "set_value": "set_json_value",
-        "replace_text": "replace",
-        "replace_string": "replace",
-    }
-    return alias_map.get(op, op)
-
-
-def _normalize_generate_mutation_object(mutation: object) -> object:
-    """Best-effort canonicalization for one mutation object."""
-    if not isinstance(mutation, dict):
-        return mutation
-
-    norm = dict(mutation)
-
-    # Common alias keys for operation name.
-    if "op" not in norm:
-        for key in ("operation", "action", "type", "name", "method"):
-            value = norm.get(key)
-            if isinstance(value, str) and value.strip():
-                norm["op"] = value.strip()
-                break
-
-    # Merge nested params often emitted as {"params": {...}} or {"data": {...}}.
-    for key in ("params", "parameters", "args", "data", "payload"):
-        nested = norm.get(key)
-        if isinstance(nested, dict):
-            for sub_k, sub_v in nested.items():
-                norm.setdefault(sub_k, sub_v)
-
-    op = _canonicalize_generate_op_name(norm.get("op"))
-    if op:
-        norm["op"] = op
-
-    # Generic field aliases.
-    if "offset" not in norm:
-        for key in ("index", "pos", "position"):
-            if key in norm:
-                norm["offset"] = norm[key]
-                break
-
-    if "hex" not in norm:
-        for key in ("bytes", "value_hex", "payload_hex"):
-            value = norm.get(key)
-            if isinstance(value, str) and value.strip():
-                norm["hex"] = value.strip()
-                break
-
-    if isinstance(norm.get("hex"), str) and norm["hex"].startswith("0x"):
-        norm["hex"] = norm["hex"][2:]
-
-    # Op-specific aliases.
-    if op == "pad_file":
-        if "target_len" not in norm:
-            for key in ("length", "size", "target", "new_len"):
-                if key in norm:
-                    norm["target_len"] = norm[key]
-                    break
-        if "char" not in norm and "fill" in norm:
-            norm["char"] = norm["fill"]
-
-    if op == "overwrite_range":
-        if "hex" not in norm and isinstance(norm.get("value"), str):
-            norm["hex"] = norm["value"]
-
-    if op == "insert_repeated_bytes":
-        if "times" not in norm:
-            norm["times"] = 1
-
-    return norm
-
-
-def _normalize_generate_payload(payload: object) -> object:
-    """
-    Best-effort canonicalization for GENERATE payload schema.
-    Keeps behavior model-agnostic while tolerating frequent format drift.
-    """
-    if isinstance(payload, list):
-        normalized = [_normalize_generate_mutation_object(m) for m in payload]
-        return {"mutations": normalized, "rationale": "normalized-from-array"}
-
-    if not isinstance(payload, dict):
-        return payload
-
-    # Direct single-mutation object -> wrap.
-    if payload.get("op") or payload.get("operation") or payload.get("action"):
-        single = _normalize_generate_mutation_object(payload)
-        rationale = payload.get("rationale")
-        if not isinstance(rationale, str):
-            rationale = "normalized-single-mutation"
-        return {"mutations": [single], "rationale": rationale}
-
-    normalized: dict[str, Any] = dict(payload)
-    muts: list[Any] | None = None
-
-    if isinstance(normalized.get("mutations"), list):
-        muts = normalized.get("mutations")
-    else:
-        for key in ("mutation", "ops", "operations", "changes", "edits", "actions", "payload"):
-            candidate = normalized.get(key)
-            if isinstance(candidate, list):
-                muts = candidate
-                break
-            if isinstance(candidate, dict):
-                muts = [candidate]
-                break
-
-    if muts is not None:
-        normalized["mutations"] = [_normalize_generate_mutation_object(m) for m in muts]
-
-    if not isinstance(normalized.get("rationale"), str):
-        # Keep compact and deterministic; rationale is optional for pipeline logic.
-        normalized["rationale"] = "normalized-generate-payload"
-
-    return normalized
-
-
 def _extract_balanced_json_fragment(text: str) -> str | None:
     """
     Extract first balanced JSON object/array fragment from arbitrary text.
@@ -954,8 +826,6 @@ class OpenHandsLLMClient:
                         continue
 
                 if parsed is not None:
-                    if schema_kind == "generate":
-                        parsed = _normalize_generate_payload(parsed)
                     if schema_kind == "generate" and not _has_generate_mutations(parsed):
                         print(
                             f"  Warning: Generate payload has no mutations "
@@ -964,20 +834,19 @@ class OpenHandsLLMClient:
                         if attempt < effective_max_retries:
                             compact_original = _compact_for_repair_prompt(parsed_from or content)
                             repair_prompt = (
-                                "Previous JSON had no usable mutations. "
-                                "Return ONLY one valid JSON object with this exact schema: "
+                                "The previous JSON was valid but unusable because it contains no mutations. "
+                                "Return valid JSON with at least ONE mutation operation. "
+                                "Use this schema: "
                                 "{\"mutations\":[{\"op\":\"...\"}],\"rationale\":\"...\"}. "
-                                "Include 1-4 mutations. Do NOT return an empty list. "
-                                "Use key `op` (not action/operation/type).\n"
+                                "Do not return an empty list.\n"
                                 f"Original response:\n{compact_original}"
                             )
                             messages = [
                                 {
                                     "role": "system",
                                     "content": (
-                                        "Respond with JSON only. "
-                                        "Required schema: {\"mutations\":[...],\"rationale\":\"...\"}. "
-                                        "Every mutation object MUST include key `op`."
+                                        "You must respond with valid JSON only and include at least one "
+                                        "mutation operation in `mutations`."
                                     ),
                                 },
                                 {"role": "user", "content": repair_prompt},
@@ -993,25 +862,20 @@ class OpenHandsLLMClient:
                     import ast
                     evaluated = ast.literal_eval(content)
                     if isinstance(evaluated, (dict, list)):
-                        if schema_kind == "generate":
-                            evaluated = _normalize_generate_payload(evaluated)
                         if schema_kind == "generate" and not _has_generate_mutations(evaluated):
                             if attempt < effective_max_retries:
                                 compact_original = _compact_for_repair_prompt(content)
                                 repair_prompt = (
-                                    "Previous response was parseable but had no usable mutations. "
-                                    "Return ONLY one valid JSON object: "
-                                    "{\"mutations\":[{\"op\":\"...\"}],\"rationale\":\"...\"}. "
-                                    "Include 1-4 mutations and do not return an empty list.\n"
+                                    "The previous response was parseable but has no mutations. "
+                                    "Return valid JSON with at least one mutation in `mutations`.\n"
                                     f"Original response:\n{compact_original}"
                                 )
                                 messages = [
                                     {
                                         "role": "system",
                                         "content": (
-                                            "Respond with JSON only. "
-                                            "Required schema: {\"mutations\":[...],\"rationale\":\"...\"}. "
-                                            "Each mutation must include key `op`."
+                                            "You must respond with valid JSON only and include at least one "
+                                            "mutation operation in `mutations`."
                                         ),
                                     },
                                     {"role": "user", "content": repair_prompt},
@@ -1034,38 +898,16 @@ class OpenHandsLLMClient:
                 if attempt < effective_max_retries:
                     # Try to repair JSON
                     compact_original = _compact_for_repair_prompt(content)
-                    if schema_kind == "generate":
-                        repair_prompt = (
-                            "Previous response was invalid JSON for GENERATE. "
-                            f"Error: {str(e)}. "
-                            "Return ONLY one compact JSON object with exact schema: "
-                            "{\"mutations\":[{\"op\":\"...\"}],\"rationale\":\"...\"}. "
-                            "Use key `op` (not operation/action/type). "
-                            "Include 1-4 mutations. No markdown, no prose.\n"
-                            f"Original response:\n{compact_original}"
-                        )
-                        messages = [
-                            {
-                                "role": "system",
-                                "content": (
-                                    "Respond with valid JSON only. "
-                                    "Required schema: {\"mutations\":[...],\"rationale\":\"...\"}. "
-                                    "Each mutation object must contain key `op`."
-                                ),
-                            },
-                            {"role": "user", "content": repair_prompt},
-                        ]
-                    else:
-                        repair_prompt = (
-                            f"The previous response was not valid JSON. "
-                            f"Error: {str(e)}. "
-                            "Please provide ONLY valid JSON without any markdown formatting. "
-                            f"Original response:\n{compact_original}"
-                        )
-                        messages = [
-                            {"role": "system", "content": "You must respond with valid JSON only."},
-                            {"role": "user", "content": repair_prompt}
-                        ]
+                    repair_prompt = (
+                        f"The previous response was not valid JSON. "
+                        f"Error: {str(e)}. "
+                        f"Please provide ONLY valid JSON without any markdown formatting. "
+                        f"Original response:\n{compact_original}"
+                    )
+                    messages = [
+                        {"role": "system", "content": "You must respond with valid JSON only."},
+                        {"role": "user", "content": repair_prompt}
+                    ]
                 else:
                     raise RuntimeError(
                         f"Failed to parse JSON response after {effective_max_retries + 1} attempts. "

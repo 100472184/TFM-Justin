@@ -505,13 +505,13 @@ OLLAMA_CVE_MODEL_LEVEL_ENV_OVERRIDES: dict[tuple[str, str, str], dict[str, str]]
     # keep GENERATE tighter on this level due to repeated malformed JSON,
     # unsupported ops, and no-mutation payloads.
     ("CVE-2021-32292_jsonc", "ollama/gemini-3-flash-preview", "L2"): {
-        "LLM_GENERATE_MAX_TOKENS": "450",
-        "LLM_GENERATE_TIMEOUT": "75",
+        "LLM_GENERATE_MAX_TOKENS": "700",
+        "LLM_GENERATE_TIMEOUT": "90",
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_MAX_GENERATE_ATTEMPTS": "4",
-        "LLM_GENERATE_JSON_RETRIES": "1",
+        "LLM_GENERATE_JSON_RETRIES": "2",
         "LLM_GENERATE_HISTORY_WINDOW": "0",
-        "LLM_ANALYZE_MAX_TOKENS": "900",
+        "LLM_ANALYZE_MAX_TOKENS": "700",
     },
 }
 
