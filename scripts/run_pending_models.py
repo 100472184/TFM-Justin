@@ -205,19 +205,19 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
     # keep GENERATE compact for long L1/L0 campaigns and avoid 3200-token
     # empty/timeout loops seen in prior batches.
     ("CVE-2021-32292_jsonc", "ollama/gemini-3-flash-preview"): {
-        "LLM_GENERATE_MAX_TOKENS": "1200",
+        "LLM_GENERATE_MAX_TOKENS": "1600",
         "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_MAX_GENERATE_ATTEMPTS": "4",
-        "LLM_GENERATE_JSON_RETRIES": "2",
+        "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     ("CVE-2021-32292_jsonc", "ollama/deepseek-v4-pro"): {
-        "LLM_GENERATE_MAX_TOKENS": "1200",
+        "LLM_GENERATE_MAX_TOKENS": "1600",
         "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_MAX_GENERATE_ATTEMPTS": "4",
-        "LLM_GENERATE_JSON_RETRIES": "2",
+        "LLM_GENERATE_JSON_RETRIES": "1",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     # libxml2 (CVE-2024-25062) + gemini-3-flash-preview:
