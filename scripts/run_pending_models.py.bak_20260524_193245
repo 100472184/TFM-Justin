@@ -498,22 +498,6 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
     },
 }
 
-# CVE+model+level targeted env overrides.
-# Use this only for level-specific instability hotspots.
-OLLAMA_CVE_MODEL_LEVEL_ENV_OVERRIDES: dict[tuple[str, str, str], dict[str, str]] = {
-    # json-c (CVE-2021-32292) + gemini L2:
-    # keep GENERATE tighter on this level due to repeated malformed JSON,
-    # unsupported ops, and no-mutation payloads.
-    ("CVE-2021-32292_jsonc", "ollama/gemini-3-flash-preview", "L2"): {
-        "LLM_GENERATE_MAX_TOKENS": "1200",
-        "LLM_GENERATE_TIMEOUT": "120",
-        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
-        "LLM_MAX_GENERATE_ATTEMPTS": "4",
-        "LLM_GENERATE_JSON_RETRIES": "2",
-        "LLM_GENERATE_HISTORY_WINDOW": "1",
-    },
-}
-
 # Keep seed discovery aligned with the pipeline, while allowing task-local
 # preference boosts (e.g., text-argument tasks).
 SEED_CANDIDATES_DEFAULT = [
@@ -939,7 +923,13 @@ FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-4323_fluentbit", "gpt-oss-20b", "L0"),
     ("CVE-2024-4323_fluentbit", "ministral-3-8b", "L0"),
     # json-c leakage re-test campaign:
-    # L3 (6/6) completed and staged; keep force-pending for L2/L1/L0 only.
+    # force all 24 model/level combos even if baseline marks them as existing.
+    ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L3"),
+    ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L3"),
+    ("CVE-2021-32292_jsonc", "glm-5.1", "L3"),
+    ("CVE-2021-32292_jsonc", "qwen3-coder-next", "L3"),
+    ("CVE-2021-32292_jsonc", "gpt-oss-20b", "L3"),
+    ("CVE-2021-32292_jsonc", "ministral-3-8b", "L3"),
     ("CVE-2021-32292_jsonc", "gemini-3-flash-preview", "L2"),
     ("CVE-2021-32292_jsonc", "deepseek-v4-pro", "L2"),
     ("CVE-2021-32292_jsonc", "glm-5.1", "L2"),
@@ -2421,7 +2411,6 @@ def build_run_env(
     local_llm_env: dict[str, str],
     *,
     cve: str | None = None,
-    level: str | None = None,
 ) -> tuple[dict[str, str], list[str]]:
     env = os.environ.copy()
     for key, value in local_llm_env.items():
@@ -2501,20 +2490,6 @@ def build_run_env(
                 if effective_value != value:
                     env[key] = value
                     sanitized.append(f"{key}={value}")
-            if level:
-                per_task_level_overrides: dict[str, str] = {}
-                for model_key in model_candidates:
-                    per_task_level_overrides = OLLAMA_CVE_MODEL_LEVEL_ENV_OVERRIDES.get(
-                        (cve, model_key, level),
-                        {},
-                    )
-                    if per_task_level_overrides:
-                        break
-                for key, value in per_task_level_overrides.items():
-                    effective_value = env.get(key, "").strip()
-                    if effective_value != value:
-                        env[key] = value
-                        sanitized.append(f"{key}={value}")
 
     # If caller sets OLLAMA_API_BASE in local file, avoid accidental override by
     # stale global LLM_BASE_URL from shell/session.
@@ -2788,12 +2763,7 @@ def main() -> int:
             log(f"DRY-RUN seed-policy: {seed_reason}")
             if service != "target-vuln":
                 log(f"DRY-RUN service-override: {combo.cve} {combo.level} -> {service}")
-            env_preview, sanitized = build_run_env(
-                combo.model_spec,
-                local_llm_env,
-                cve=combo.cve,
-                level=combo.level,
-            )
+            env_preview, sanitized = build_run_env(combo.model_spec, local_llm_env, cve=combo.cve)
             sanitized = apply_service_sensitive_env_overrides(
                 env_preview,
                 sanitized,
@@ -2870,12 +2840,7 @@ def main() -> int:
             "--seed",
             str(seed_path),
         ]
-        run_env, sanitized_env = build_run_env(
-            combo.model_spec,
-            local_llm_env,
-            cve=combo.cve,
-            level=combo.level,
-        )
+        run_env, sanitized_env = build_run_env(combo.model_spec, local_llm_env, cve=combo.cve)
         sanitized_env = apply_service_sensitive_env_overrides(
             run_env,
             sanitized_env,
