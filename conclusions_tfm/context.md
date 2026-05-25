@@ -365,6 +365,16 @@
 | `CVE-2025-26623_exiv2` | 24 | 1 | 23 | 4.2% | 96.1% |
 | `CVE-2025-49014_jq` | 24 | 12 | 12 | 50.0% | 61.7% |
 
+### Desglose adicional para CVEs reevaluados (sin alterar totales por CVE)
+- Este bloque desagrega casos con multiples perfiles/harness; los totales oficiales por CVE siguen siendo los de la tabla anterior.
+
+| CVE | Criterio de desglose | Runs | Exitos | Fracasos | Success rate | Budget medio |
+|---|---|---:|---:|---:|---:|---:|
+| `CVE-2024-4323_fluentbit` | `seed (new op)` | 24 | 24 | 0 | 100.0% | 12.6% |
+| `CVE-2024-4323_fluentbit` | `seed_crash` | 24 | 24 | 0 | 100.0% | 8.3% |
+| `CVE-2023-29469_libxml2` | `target-vuln` (`L0/L1/L2`) | 18 | 0 | 18 | 0.0% | 100.0% |
+| `CVE-2023-29469_libxml2` | `target-vuln-direct` (`L3`) | 6 | 5 | 1 | 83.3% | 22.2% |
+
 ## 29. Indicadores agregados (calculados sobre la tabla anterior)
 - Runs totales agregadas: 309.
 - Exitos agregados: 188.
@@ -535,6 +545,8 @@
 - Fracasos: 19. [33]
 - Success rate: 20.8%. [33]
 - Presupuesto medio consumido: 80.6%. [33]
+- Harness `target-vuln` (`L0/L1/L2`): 18 runs, 0 exitos, 18 fracasos. [33]
+- Harness `target-vuln-direct` (`L3`): 6 runs, 5 exitos, 1 fracaso. [33]
 - CVE: `CVE-2023-39804_gnutar`. [34]
 - Runs activas analizadas: 24. [34]
 - Exitos: 18. [34]
@@ -553,6 +565,9 @@
 - Fracasos: 0. [36]
 - Success rate: 100.0%. [36]
 - Presupuesto medio consumido: 10.4%. [36]
+- Perfil `seed (new op)`: 24 runs, 24 exitos, 0 fracasos. [36]
+- Perfil `seed_crash`: 24 runs, 24 exitos, 0 fracasos. [36]
+- Harness usado en ambos perfiles: `target-vuln`. [36]
 - CVE: `CVE-2024-57970_libarchive`. [37]
 - Runs activas analizadas: 24. [37]
 - Exitos: 21. [37]
