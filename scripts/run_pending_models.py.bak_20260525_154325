@@ -162,18 +162,14 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
-    # libarchive (ORACLE_BROKEN and leakage pilot):
-    # keep JSON compact and disable GENERATE history carryover so each
-    # iteration is independent (stricter anti-leakage posture).
+    # libarchive (ORACLE_BROKEN and prior generate instability):
+    # keep JSON compact and reduce long/thought-heavy responses that tend to
+    # produce malformed payloads.
     "CVE-2024-57970_libarchive": {
         "LLM_GENERATE_MAX_TOKENS": "2400",
         "LLM_GENERATE_TIMEOUT": "150",
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
-        "LLM_GENERATE_HISTORY_WINDOW": "0",
-        "LLM_ANALYZE_MAX_TOKENS": "700",
-        # Anti-leakage strict mode in pipeline:
-        # disable cross-iteration prompt history/feedback add-ons.
-        "LLM_STRICT_LEVEL_ISOLATION": "1",
+        "LLM_GENERATE_HISTORY_WINDOW": "2",
     },
     # libming: stabilize GENERATE for SWF-focused mutation plans and reduce
     # long/empty responses in low-context levels.
@@ -406,7 +402,7 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "LLM_GENERATE_MAX_TOKENS": "2000",
         "LLM_GENERATE_TIMEOUT": "120",
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
-        "LLM_GENERATE_HISTORY_WINDOW": "0",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     # Remaining L0 campaign sweep (2026-05-17): apply strict compact-profile
     # per pending pair to avoid repeated max-token empty loops/timeouts.
@@ -450,7 +446,7 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_MAX_GENERATE_ATTEMPTS": "4",
         "LLM_GENERATE_JSON_RETRIES": "1",
-        "LLM_GENERATE_HISTORY_WINDOW": "0",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     ("CVE-2025-26623_exiv2", "ollama/glm-5.1"): {
         "LLM_GENERATE_MAX_TOKENS": "1600",
@@ -474,7 +470,7 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "none",
         "LLM_MAX_GENERATE_ATTEMPTS": "4",
         "LLM_GENERATE_JSON_RETRIES": "1",
-        "LLM_GENERATE_HISTORY_WINDOW": "0",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     ("CVE-2024-4323_fluentbit", "ollama/gpt-oss:20b"): {
         "LLM_GENERATE_MAX_TOKENS": "1800",
@@ -490,7 +486,7 @@ OLLAMA_CVE_MODEL_ENV_OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "medium",
         "LLM_MAX_GENERATE_ATTEMPTS": "4",
         "LLM_GENERATE_JSON_RETRIES": "1",
-        "LLM_GENERATE_HISTORY_WINDOW": "0",
+        "LLM_GENERATE_HISTORY_WINDOW": "1",
     },
     ("CVE-2024-4323_fluentbit", "ollama/ministral-3:8b"): {
         "LLM_GENERATE_MAX_TOKENS": "1600",

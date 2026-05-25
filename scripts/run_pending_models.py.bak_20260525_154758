@@ -171,9 +171,6 @@ OLLAMA_CVE_ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "OLLAMA_GENERATE_REASONING_EFFORT": "low",
         "LLM_GENERATE_HISTORY_WINDOW": "0",
         "LLM_ANALYZE_MAX_TOKENS": "700",
-        # Anti-leakage strict mode in pipeline:
-        # disable cross-iteration prompt history/feedback add-ons.
-        "LLM_STRICT_LEVEL_ISOLATION": "1",
     },
     # libming: stabilize GENERATE for SWF-focused mutation plans and reduce
     # long/empty responses in low-context levels.
