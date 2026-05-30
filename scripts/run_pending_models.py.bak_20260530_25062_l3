@@ -517,36 +517,6 @@ OLLAMA_CVE_MODEL_LEVEL_ENV_OVERRIDES: dict[tuple[str, str, str], dict[str, str]]
         "LLM_GENERATE_HISTORY_WINDOW": "0",
         "LLM_ANALYZE_MAX_TOKENS": "700",
     },
-    # CVE-2024-25062/libxml2 L3 completion pass:
-    # only the three absent L3 cells are force-scheduled. Keep GENERATE compact
-    # to avoid the long/malformed JSON loops observed in this task family.
-    ("CVE-2024-25062_libxml2", "ollama/gemini-3-flash-preview", "L3"): {
-        "LLM_GENERATE_MAX_TOKENS": "1000",
-        "LLM_GENERATE_TIMEOUT": "120",
-        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
-        "LLM_MAX_GENERATE_ATTEMPTS": "3",
-        "LLM_GENERATE_JSON_RETRIES": "1",
-        "LLM_GENERATE_HISTORY_WINDOW": "1",
-        "LLM_ANALYZE_MAX_TOKENS": "900",
-    },
-    ("CVE-2024-25062_libxml2", "ollama/deepseek-v4-pro", "L3"): {
-        "LLM_GENERATE_MAX_TOKENS": "1000",
-        "LLM_GENERATE_TIMEOUT": "120",
-        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
-        "LLM_MAX_GENERATE_ATTEMPTS": "3",
-        "LLM_GENERATE_JSON_RETRIES": "1",
-        "LLM_GENERATE_HISTORY_WINDOW": "1",
-        "LLM_ANALYZE_MAX_TOKENS": "900",
-    },
-    ("CVE-2024-25062_libxml2", "ollama/glm-5.1", "L3"): {
-        "LLM_GENERATE_MAX_TOKENS": "1000",
-        "LLM_GENERATE_TIMEOUT": "120",
-        "OLLAMA_GENERATE_REASONING_EFFORT": "none",
-        "LLM_MAX_GENERATE_ATTEMPTS": "3",
-        "LLM_GENERATE_JSON_RETRIES": "1",
-        "LLM_GENERATE_HISTORY_WINDOW": "1",
-        "LLM_ANALYZE_MAX_TOKENS": "900",
-    },
 }
 
 # Keep seed discovery aligned with the pipeline, while allowing task-local
@@ -969,13 +939,6 @@ FORCE_PENDING_COMBOS: set[tuple[str, str, str]] = {
     ("CVE-2024-57970_libarchive", "qwen3-coder-next", "L0"),
     ("CVE-2024-57970_libarchive", "gpt-oss-20b", "L0"),
     ("CVE-2024-57970_libarchive", "ministral-3-8b", "L0"),
-    # CVE-2024-25062/libxml2 coverage completion:
-    # these three L3 cells are absent from the active 21/24 matrix. They are
-    # run against the available standard harness; the task has no
-    # target-vuln-direct service in compose.yml.
-    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L3"),
-    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L3"),
-    ("CVE-2024-25062_libxml2", "glm-5.1", "L3"),
 }
 
 # Guardrail note:
@@ -1000,12 +963,13 @@ CANONICAL_REQUIRED_COMBOS: set[tuple[str, str, str]] = {
 
 # Per-combo exclusions.
 # Methodology rule for CVE-2024-25062:
-# - L3 ideally belongs with a direct harness (`target-vuln-direct`), but this
-#   task compose currently exposes only target-vuln/target-fixed.
-# - The three already-covered L3 cells remain excluded from reruns.
-# - The three absent L3 cells are force-scheduled above as an explicit coverage
-#   completion pass against the available standard harness.
+# - L3 should only be executed with direct harness (`target-vuln-direct`).
+# - That task compose currently exposes only target-vuln/target-fixed, so L3
+#   combos are excluded to avoid invalid methodology runs.
 EXCLUDED_COMBOS: dict[tuple[str, str, str, str], str] = {
+    ("CVE-2024-25062_libxml2", "gemini-3-flash-preview", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
+    ("CVE-2024-25062_libxml2", "deepseek-v4-pro", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
+    ("CVE-2024-25062_libxml2", "glm-5.1", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
     ("CVE-2024-25062_libxml2", "qwen3-coder-next", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
     ("CVE-2024-25062_libxml2", "gpt-oss-20b", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
     ("CVE-2024-25062_libxml2", "ministral-3-8b", "L3", "default"): "excluded-policy:l3-requires-direct-harness-unavailable",
